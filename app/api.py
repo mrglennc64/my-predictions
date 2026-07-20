@@ -266,6 +266,8 @@ def home():
  .m{{color:#5c6b63}} .note{{color:#5c6b63;font-size:.8rem;margin-top:2rem}}
 </style></head><body>
 <h1>Contest Edge — MLB Ledger</h1>
+<p class="m" style="margin-top:-.2rem">predictions layer ·
+<a href="https://dip.usesmpt.com">decision layer (DIP) →</a></p>
 <p class="head">Model Brier: {fmt(metrics['model_brier'], 5) if metrics['model_brier'] else '—'}
  &nbsp;·&nbsp; Market Brier: {fmt(metrics['market_brier'], 5) if metrics['market_brier'] else '—'}
  &nbsp;·&nbsp; {metrics['graded_predictions']} graded predictions</p>
