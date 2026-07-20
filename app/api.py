@@ -112,18 +112,24 @@ def _crypto():
     mb = sum(r.model_brier for r in graded) / n if n else None
     pb = sum(r.pm_brier for r in graded) / n if n else None
     model_wins = sum(1 for r in graded if r.model_brier < r.pm_brier)
+    trades = [r for r in graded if r.trade_pnl is not None]
     row = lambda r: {
         "slug": r.slug, "symbol": r.symbol, "captured_at": r.captured_at,
         "seconds_left": r.seconds_left, "lead_pct": r.lead_pct,
         "model_p_up": r.model_p_up, "pm_p_up": r.pm_p_up,
         "outcome": r.outcome, "model_brier": r.model_brier,
-        "pm_brier": r.pm_brier,
+        "pm_brier": r.pm_brier, "trade_side": r.trade_side,
+        "trade_price": r.trade_price, "trade_pnl": r.trade_pnl,
     }
     return {
         "graded": n,
         "model_brier": round(mb, 4) if mb is not None else None,
         "polymarket_brier": round(pb, 4) if pb is not None else None,
         "model_wins": model_wins,
+        "paper_trades": len(trades),
+        "paper_wins": sum(1 for r in trades if r.trade_pnl > 0),
+        "paper_pnl": round(sum(r.trade_pnl for r in trades), 2),
+        "paper_stake_per_trade": 100,
         "recent_graded": [row(r) for r in graded[:20]],
         "pending": [row(r) for r in pending],
     }
@@ -185,18 +191,30 @@ def home():
             res = "Up" if r["outcome"] else "Down"
             winner = ("model" if r["model_brier"] < r["pm_brier"] else
                       "polymarket" if r["pm_brier"] < r["model_brier"] else "tie")
+        if r["trade_side"] is None:
+            trade = "—"
+        else:
+            trade = f"{r['trade_side']}@{r['trade_price']:.2f}"
+            if r["trade_pnl"] is not None:
+                trade += f" → {r['trade_pnl']:+.0f}"
         return (f"<tr><td>{r['symbol']}</td><td class='m'>{r['slug'][-19:]}</td>"
                 f"<td>{r['lead_pct']:+.3f}%</td><td>{r['model_p_up']:.3f}</td>"
-                f"<td>{r['pm_p_up']:.3f}</td><td>{res}</td><td>{winner}</td></tr>")
+                f"<td>{r['pm_p_up']:.3f}</td><td>{res}</td><td>{winner}</td>"
+                f"<td>{trade}</td></tr>")
 
+    paper_bit = (f" &nbsp;·&nbsp; paper: {cr['paper_trades']} trades, "
+                 f"{cr['paper_wins']} wins, ${cr['paper_pnl']:+.2f} "
+                 f"(${cr['paper_stake_per_trade']}/trade)"
+                 if cr.get("paper_trades") else "")
     crypto_head = ("nothing graded yet — watch is capturing"
                    if not cr["graded"] else
                    f"{cr['graded']} graded &nbsp;·&nbsp; model Brier "
                    f"{cr['model_brier']} vs Polymarket {cr['polymarket_brier']}"
-                   f" &nbsp;·&nbsp; model closer on {cr['model_wins']}/{cr['graded']}")
+                   f" &nbsp;·&nbsp; model closer on {cr['model_wins']}/{cr['graded']}"
+                   + paper_bit)
     crypto_rows = "\n".join(crow(r) for r in
                             (cr["pending"] + cr["recent_graded"])[:20]) or \
-        "<tr><td colspan='7'>run: python scan.py crypto-watch 120</td></tr>"
+        "<tr><td colspan='8'>run: python scan.py crypto-watch 120</td></tr>"
 
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>Contest Edge — Ledger</title>
@@ -228,8 +246,11 @@ Probabilities, never picks. Market benchmark: Polymarket.</p>
 <h2>Crypto up/down — live self-grading watch</h2>
 <p class="head">{crypto_head}</p>
 <table><tr><th>Sym</th><th>Window</th><th>Spot lead</th><th>Model P(Up)</th>
-<th>PM P(Up)</th><th>Result</th><th>Closer</th></tr>
+<th>PM P(Up)</th><th>Result</th><th>Closer</th><th>Paper trade</th></tr>
 {crypto_rows}</table>
+<p class="note">Paper trades fire only when |model − market| ≥ 0.10 AND the
+model's edge still clears 0.10 against the actual order-book ask — the price
+a real buy would pay. $100 hypothetical stake each. Zero real orders.</p>
 <h2>Graded ledger (recent)</h2>
 <table><tr><th>Start (UTC)</th><th>Game</th><th>Score</th><th>Model P(home)</th>
 <th>Winner</th><th>Brier</th><th>Market Brier</th></tr>

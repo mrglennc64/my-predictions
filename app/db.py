@@ -91,6 +91,10 @@ crypto_signals = Table(                                # APPEND-ONLY signals; ou
     Column("model_brier", Float),
     Column("pm_brier", Float),
     Column("graded_at", Text),
+    # paper trading: filled at capture when |edge| clears the trade threshold
+    Column("trade_side", Text),                        # 'up' | 'down' | NULL no trade
+    Column("trade_price", Float),                      # actual CLOB ask paid
+    Column("trade_pnl", Float),                        # settled at resolution
 )
 
 
@@ -101,4 +105,19 @@ def get_engine():
 def init_db():
     engine = get_engine()
     metadata.create_all(engine)
+    _migrate(engine)
     return engine
+
+
+def _migrate(engine):
+    """create_all never alters existing tables — add late columns by hand."""
+    from sqlalchemy import inspect, text
+    existing = {c["name"] for c in inspect(engine).get_columns("crypto_signals")}
+    additions = [("trade_side", "TEXT"), ("trade_price", "REAL"),
+                 ("trade_pnl", "REAL")]
+    missing = [(n, t) for n, t in additions if n not in existing]
+    if missing:
+        with engine.begin() as conn:
+            for name, ddl in missing:
+                conn.execute(text(
+                    f"ALTER TABLE crypto_signals ADD COLUMN {name} {ddl}"))

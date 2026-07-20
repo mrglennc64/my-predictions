@@ -37,6 +37,8 @@ class CryptoSignal:
     model_p_up: float        # drift-diffusion estimate
     pm_p_up: float           # Polymarket "Up" price
     edge: float              # model - market
+    up_token: str | None = None    # CLOB token ids, for order-book asks
+    down_token: str | None = None
 
 
 def _phi(x: float) -> float:
@@ -76,13 +78,17 @@ def scan(threshold: float = 0.05, min_seconds_left: int = 60) -> list[CryptoSign
         if not (min_seconds_left <= left) or now < start_ts:
             continue  # window not currently active
 
-        pm_p_up = None
+        pm_p_up = up_token = down_token = None
         for mk in ev.get("markets", []):
             outcomes = gamma.parse_json_field(mk.get("outcomes"))
             prices = gamma.parse_json_field(mk.get("outcomePrices"))
-            for o, p in zip(outcomes, prices):
+            tokens = gamma.parse_json_field(mk.get("clobTokenIds"))
+            for i, (o, p) in enumerate(zip(outcomes, prices)):
                 if str(o).lower() == "up":
                     pm_p_up = float(p)
+                    up_token = tokens[i] if i < len(tokens) else None
+                elif str(o).lower() == "down":
+                    down_token = tokens[i] if i < len(tokens) else None
         if pm_p_up is None or not (0.02 < pm_p_up < 0.98):
             continue
 
@@ -109,6 +115,8 @@ def scan(threshold: float = 0.05, min_seconds_left: int = 60) -> list[CryptoSign
                 model_p_up=round(model_p, 3),
                 pm_p_up=round(pm_p_up, 3),
                 edge=round(edge, 3),
+                up_token=up_token,
+                down_token=down_token,
             ))
     signals.sort(key=lambda s: abs(s.edge), reverse=True)
     return signals
