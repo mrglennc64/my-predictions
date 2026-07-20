@@ -14,9 +14,14 @@ Usage: python -m app.jobs.export_dip
 import csv
 import os
 import re
+from datetime import datetime, timezone
+
+import requests
 from sqlalchemy import select
 
 from app import db
+
+DIP_URL = os.environ.get("DIP_URL", "http://127.0.0.1:8100")
 
 EXPORT_DIR = os.path.join(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))), "exports")
@@ -84,6 +89,35 @@ def main():
             w.writerows(rows)
     print(f"[export_dip] live {len(live)} rows, graded {len(graded)} rows "
           f"-> {EXPORT_DIR}")
+    _push_to_dip(live, graded)
+
+
+def _push_to_dip(live: list[dict], graded: list[dict]):
+    """POST the batch to a running DIP server so its dashboard is populated.
+    DIP being down is fine — the CSVs remain the durable handoff."""
+    payload = {
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "predictions": [{
+            "player": r["entity"], "sport": r["domain"], "market": r["market"],
+            "line": float(r["line"]), "probabilityOver": float(r["modelp"]),
+            "event_key": r["gameid"], "timestamp": r["date"],
+            "source": "contest-edge",
+        } for r in live],
+        "history": [{
+            "p": float(r["modelp"]), "hit": int(r["actual"]),
+            "market": r["market"], "domain": r["domain"],
+        } for r in graded],
+    }
+    try:
+        resp = requests.post(f"{DIP_URL}/predictions", json=payload, timeout=15)
+        if resp.ok:
+            body = resp.json()
+            print(f"[export_dip] pushed to DIP: ingested {body.get('ingested')}, "
+                  f"assessment: {body.get('assessment')}")
+        else:
+            print(f"[export_dip] DIP push {resp.status_code}: {resp.text[:150]}")
+    except requests.ConnectionError:
+        print("[export_dip] DIP server not running — CSVs written, push skipped")
 
 
 if __name__ == "__main__":

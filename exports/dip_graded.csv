@@ -68,6 +68,12 @@ BTC,btc-updown-15m-1784563200,updown_15m,2026-07-20,0.5,0.313,diffusion_v1,crypt
 XRP,xrp-updown-5m-1784563800,updown_5m,2026-07-20,0.5,0.928,diffusion_v1,crypto,1
 ETH,eth-updown-5m-1784563800,updown_5m,2026-07-20,0.5,0.934,diffusion_v1,crypto,1
 ETH,eth-updown-15m-1784563200,updown_15m,2026-07-20,0.5,0.261,diffusion_v1,crypto,1
+ETH,eth-updown-5m-1784564400,updown_5m,2026-07-20,0.5,0.496,diffusion_v1,crypto,1
 BTC,btc-updown-5m-1784564400,updown_5m,2026-07-20,0.5,0.584,diffusion_v1,crypto,1
 XRP,xrp-updown-5m-1784564400,updown_5m,2026-07-20,0.5,0.5,diffusion_v1,crypto,1
 SOL,sol-updown-5m-1784564400,updown_5m,2026-07-20,0.5,0.5,diffusion_v1,crypto,1
+BTC,btc-updown-5m-1784564700,updown_5m,2026-07-20,0.5,0.156,diffusion_v1,crypto,0
+XRP,xrp-updown-5m-1784564700,updown_5m,2026-07-20,0.5,0.178,diffusion_v1,crypto,0
+ETH,eth-updown-5m-1784564700,updown_5m,2026-07-20,0.5,0.179,diffusion_v1,crypto,0
+SOL,sol-updown-5m-1784564700,updown_5m,2026-07-20,0.5,0.09,diffusion_v1,crypto,0
+XRP,xrp-updown-15m-1784564100,updown_15m,2026-07-20,0.5,0.054,diffusion_v1,crypto,0
