@@ -1,1 +1,2 @@
 requests>=2.32
+sqlalchemy>=2.0

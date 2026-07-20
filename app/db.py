@@ -1,0 +1,86 @@
+"""Ledger database — six tables per the v1 spec, SQLAlchemy Core over SQLite.
+
+The predictions table is APPEND-ONLY: no UPDATE statement for it exists
+anywhere in this codebase. That constraint is what makes the ledger auditable.
+"""
+import os
+
+from sqlalchemy import (Column, Float, ForeignKey, Integer, MetaData, Table,
+                        Text, create_engine)
+
+DB_URL = os.environ.get("CONTEST_EDGE_DB", "sqlite:///ledger.sqlite")
+
+metadata = MetaData()
+
+teams = Table(
+    "teams", metadata,
+    Column("team_id", Text, primary_key=True),        # 'mlb_NYY'
+    Column("sport", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("elo", Float, nullable=False, default=1500.0),
+    Column("elo_updated", Text),
+)
+
+games = Table(
+    "games", metadata,
+    Column("game_id", Text, primary_key=True),        # source-native id
+    Column("sport", Text, nullable=False),
+    Column("start_time", Text, nullable=False),       # UTC ISO
+    Column("home_team", Text, ForeignKey("teams.team_id")),
+    Column("away_team", Text, ForeignKey("teams.team_id")),
+    Column("status", Text, nullable=False, default="scheduled"),
+    Column("home_score", Integer),
+    Column("away_score", Integer),
+    Column("meta", Text),                             # JSON: probables, park
+)
+
+odds_snapshots = Table(
+    "odds_snapshots", metadata,
+    Column("snapshot_id", Integer, primary_key=True, autoincrement=True),
+    Column("game_id", Text, ForeignKey("games.game_id")),
+    Column("book", Text, nullable=False),
+    Column("market", Text, nullable=False),
+    Column("home_odds", Float, nullable=False),       # decimal odds
+    Column("away_odds", Float, nullable=False),
+    Column("fetched_at", Text, nullable=False),
+)
+
+model_versions = Table(
+    "model_versions", metadata,
+    Column("model_id", Text, primary_key=True),       # 'elo_mlb_v1.0'
+    Column("sport", Text, nullable=False),
+    Column("description", Text),
+    Column("params", Text),                           # JSON
+    Column("created_at", Text, nullable=False),
+)
+
+predictions = Table(                                   # APPEND-ONLY
+    "predictions", metadata,
+    Column("prediction_id", Integer, primary_key=True, autoincrement=True),
+    Column("game_id", Text, ForeignKey("games.game_id")),
+    Column("model_id", Text, ForeignKey("model_versions.model_id")),
+    Column("p_home", Float, nullable=False),
+    Column("market_p_home", Float),                   # de-vigged, at freeze time
+    Column("frozen_at", Text, nullable=False),        # must be < start_time
+)
+
+grades = Table(
+    "grades", metadata,
+    Column("prediction_id", Integer, ForeignKey("predictions.prediction_id"),
+           primary_key=True),
+    Column("outcome", Integer, nullable=False),       # 1 home won, 0 away won
+    Column("brier", Float, nullable=False),
+    Column("market_brier", Float),
+    Column("clv", Float),
+    Column("graded_at", Text, nullable=False),
+)
+
+
+def get_engine():
+    return create_engine(DB_URL)
+
+
+def init_db():
+    engine = get_engine()
+    metadata.create_all(engine)
+    return engine
