@@ -5,3 +5,4 @@ __pycache__/
 probe_*.py
 *.sqlite
 *.db
+logs/

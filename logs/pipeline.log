@@ -1,7 +1,0 @@
-=== pipeline 2026-07-20T16:12:03.321208+00:00 ===
-[ingest_schedule] upserted 30, skipped 0 finals (2026-07-20..2026-07-21)
-[ingest_polymarket] wrote 30 snapshots, 0 games unmatched, at 2026-07-20T16:12:04Z
-[predict_and_freeze] froze 0, already-frozen 30 at 2026-07-20T16:12:06Z
-[grade] finalized 0 games, graded 0 predictions
-[healthcheck] odds snapshots cover 30/8 of today's games; Elo mean 1500.0
-[healthcheck] all invariants hold
