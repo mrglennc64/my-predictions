@@ -6,3 +6,4 @@ probe_*.py
 *.sqlite
 *.db
 logs/
+exports/
