@@ -113,6 +113,17 @@ def _crypto():
     pb = sum(r.pm_brier for r in graded) / n if n else None
     model_wins = sum(1 for r in graded if r.model_brier < r.pm_brier)
     trades = [r for r in graded if r.trade_pnl is not None]
+
+    # quarter-Kelly P&L, computed retroactively from recorded ask + model prob:
+    # f* = (m - a)/(1 - a), staked at f*/4 of a hypothetical $10k bankroll
+    BANKROLL = 10_000.0
+    kelly_pnl = 0.0
+    for r in trades:
+        a = r.trade_price
+        m = r.model_p_up if r.trade_side == "up" else 1 - r.model_p_up
+        stake = max(0.0, (m - a) / (1 - a)) * 0.25 * BANKROLL
+        won = (r.trade_side == "up") == (r.outcome == 1)
+        kelly_pnl += stake * (1 / a - 1) if won else -stake
     row = lambda r: {
         "slug": r.slug, "symbol": r.symbol, "captured_at": r.captured_at,
         "seconds_left": r.seconds_left, "lead_pct": r.lead_pct,
@@ -130,6 +141,8 @@ def _crypto():
         "paper_wins": sum(1 for r in trades if r.trade_pnl > 0),
         "paper_pnl": round(sum(r.trade_pnl for r in trades), 2),
         "paper_stake_per_trade": 100,
+        "kelly_pnl": round(kelly_pnl, 2),
+        "kelly_note": "quarter-Kelly of $10k bankroll, sized off real ask",
         "recent_graded": [row(r) for r in graded[:20]],
         "pending": [row(r) for r in pending],
     }
@@ -203,8 +216,8 @@ def home():
                 f"<td>{trade}</td></tr>")
 
     paper_bit = (f" &nbsp;·&nbsp; paper: {cr['paper_trades']} trades, "
-                 f"{cr['paper_wins']} wins, ${cr['paper_pnl']:+.2f} "
-                 f"(${cr['paper_stake_per_trade']}/trade)"
+                 f"{cr['paper_wins']} wins, ${cr['paper_pnl']:+.2f} flat / "
+                 f"${cr['kelly_pnl']:+.2f} ¼-Kelly"
                  if cr.get("paper_trades") else "")
     crypto_head = ("nothing graded yet — watch is capturing"
                    if not cr["graded"] else
