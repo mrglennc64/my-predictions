@@ -7,13 +7,14 @@ Usage: python -m app.run_pipeline
 """
 from datetime import datetime, timezone
 
-from app.jobs import (grade, healthcheck, ingest_polymarket, ingest_schedule,
-                      predict_and_freeze)
+from app.jobs import (export_dip, grade, healthcheck, ingest_polymarket,
+                      ingest_schedule, predict_and_freeze)
 
 STEPS = [("ingest_schedule", ingest_schedule.main),
          ("ingest_polymarket", ingest_polymarket.main),
          ("predict_and_freeze", predict_and_freeze.main),
          ("grade", grade.main),
+         ("export_dip", export_dip.main),
          ("healthcheck", healthcheck.main)]
 
 
