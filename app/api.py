@@ -112,6 +112,17 @@ def _crypto():
     mb = sum(r.model_brier for r in graded) / n if n else None
     pb = sum(r.pm_brier for r in graded) / n if n else None
     model_wins = sum(1 for r in graded if r.model_brier < r.pm_brier)
+
+    # per-outcome split: proves the lead isn't an artifact of a one-sided
+    # regime (a merely-more-extreme model can't win both subsamples)
+    def _split(outcome_val):
+        grp = [r for r in graded if r.outcome == outcome_val]
+        if not grp:
+            return None
+        return {"n": len(grp),
+                "model_brier": round(sum(r.model_brier for r in grp) / len(grp), 4),
+                "polymarket_brier": round(sum(r.pm_brier for r in grp) / len(grp), 4),
+                "model_wins": sum(1 for r in grp if r.model_brier < r.pm_brier)}
     trades = [r for r in graded if r.trade_pnl is not None]
 
     # quarter-Kelly P&L, computed retroactively from recorded ask + model prob:
@@ -137,6 +148,8 @@ def _crypto():
         "model_brier": round(mb, 4) if mb is not None else None,
         "polymarket_brier": round(pb, 4) if pb is not None else None,
         "model_wins": model_wins,
+        "up_windows": _split(1),
+        "down_windows": _split(0),
         "paper_trades": len(trades),
         "paper_wins": sum(1 for r in trades if r.trade_pnl > 0),
         "paper_pnl": round(sum(r.trade_pnl for r in trades), 2),
@@ -210,7 +223,7 @@ def home():
             trade = f"{r['trade_side']}@{r['trade_price']:.2f}"
             if r["trade_pnl"] is not None:
                 trade += f" → {r['trade_pnl']:+.0f}"
-        return (f"<tr><td>{r['symbol']}</td><td class='m'>{r['slug'][-19:]}</td>"
+        return (f"<tr><td>{r['symbol']}</td><td class='m'>{r['slug']}</td>"
                 f"<td>{r['lead_pct']:+.3f}%</td><td>{r['model_p_up']:.3f}</td>"
                 f"<td>{r['pm_p_up']:.3f}</td><td>{res}</td><td>{winner}</td>"
                 f"<td>{trade}</td></tr>")
@@ -219,12 +232,18 @@ def home():
                  f"{cr['paper_wins']} wins, ${cr['paper_pnl']:+.2f} flat / "
                  f"${cr['kelly_pnl']:+.2f} ¼-Kelly"
                  if cr.get("paper_trades") else "")
+    split_bit = ""
+    if cr.get("up_windows") and cr.get("down_windows"):
+        u, d = cr["up_windows"], cr["down_windows"]
+        split_bit = (f"<br>Up windows ({u['n']}): model {u['model_brier']} vs "
+                     f"PM {u['polymarket_brier']} · Down windows ({d['n']}): "
+                     f"model {d['model_brier']} vs PM {d['polymarket_brier']}")
     crypto_head = ("nothing graded yet — watch is capturing"
                    if not cr["graded"] else
                    f"{cr['graded']} graded &nbsp;·&nbsp; model Brier "
                    f"{cr['model_brier']} vs Polymarket {cr['polymarket_brier']}"
                    f" &nbsp;·&nbsp; model closer on {cr['model_wins']}/{cr['graded']}"
-                   + paper_bit)
+                   + paper_bit + split_bit)
     crypto_rows = "\n".join(crow(r) for r in
                             (cr["pending"] + cr["recent_graded"])[:20]) or \
         "<tr><td colspan='8'>run: python scan.py crypto-watch 120</td></tr>"

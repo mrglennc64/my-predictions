@@ -74,20 +74,30 @@ def _record(conn, signals) -> int:
 
 
 def _resolved_outcome(slug: str) -> int | None:
+    """Winner from the market's own resolution — never from spot data.
+
+    Requires the market to be explicitly closed (or UMA-resolved) before
+    reading the settled prices, so an extreme-but-live price can never grade
+    a window early.
+    """
     try:
         events = gamma._get("/events", slug=slug)
     except Exception:
         return None
     for ev in events if isinstance(events, list) else [events]:
         for mk in ev.get("markets", []):
+            resolved = bool(mk.get("closed")) or \
+                str(mk.get("umaResolutionStatus", "")).lower() == "resolved"
+            if not resolved:
+                continue
             outcomes = gamma.parse_json_field(mk.get("outcomes"))
             prices = gamma.parse_json_field(mk.get("outcomePrices"))
             for o, p in zip(outcomes, prices):
                 if str(o).lower() == "up":
                     p = float(p)
-                    if p > 0.95:
+                    if p >= 0.99:
                         return 1
-                    if p < 0.05:
+                    if p <= 0.01:
                         return 0
     return None
 
