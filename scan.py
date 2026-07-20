@@ -2,7 +2,9 @@
 
   python scan.py negrisk              # negative-risk arb monitor
   python scan.py wallets              # smart-wallet consensus basket
-  python scan.py divergence [sport]   # sharp-book vs Polymarket (needs ODDS_API_KEY)
+  python scan.py divergence [sport]   # book line vs Polymarket (free ESPN odds)
+  python scan.py screener             # poly-maker-style market quality screen
+  python scan.py crypto               # BTC/ETH up-or-down window divergence
 """
 import sys
 
@@ -47,6 +49,29 @@ def run_divergence(sport: str = "mlb"):
         print(f"  https://polymarket.com/market/{d.pm_slug}")
 
 
+def run_screener():
+    from src.scanners import screener
+    print("Screening markets (reward/volume/calm score, poly-maker style)...")
+    for s in screener.scan(top_n=20):
+        flag = "R" if s.incentivized else " "
+        print(f"  [{s.score:>7.1f}]{flag} {s.price:.2f}  vol24 ${s.volume24h:>10,}  "
+              f"spread {s.spread:.3f}  {s.question[:70]}")
+
+
+def run_crypto():
+    from src.scanners import crypto
+    print("Scanning live up-or-down windows vs Coinbase spot...")
+    signals = crypto.scan(threshold=0.05)
+    if not signals:
+        print("No active-window divergences >= 5% right now.")
+        return
+    for s in signals:
+        print(f"\n[{s.edge:+.3f}] {s.title}  ({s.seconds_left}s left)")
+        print(f"  spot lead {s.lead_pct:+.3f}%  model P(Up) {s.model_p_up}  "
+              f"PM P(Up) {s.pm_p_up}")
+        print(f"  https://polymarket.com/event/{s.slug}")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "negrisk"
     if cmd == "negrisk":
@@ -55,5 +80,9 @@ if __name__ == "__main__":
         run_wallets()
     elif cmd == "divergence":
         run_divergence(sys.argv[2] if len(sys.argv) > 2 else "mlb")
+    elif cmd == "screener":
+        run_screener()
+    elif cmd == "crypto":
+        run_crypto()
     else:
         print(__doc__)

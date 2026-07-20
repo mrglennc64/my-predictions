@@ -14,9 +14,10 @@ def _get(path: str, **params) -> list | dict:
 
 
 def get_events(closed: bool = False, limit: int = 100, offset: int = 0,
-               order: str = "volume24hr", tag_id: int | None = None) -> list[dict]:
+               order: str = "volume24hr", tag_id: int | None = None,
+               ascending: bool = False, **extra) -> list[dict]:
     params = {"closed": str(closed).lower(), "limit": limit, "offset": offset,
-              "order": order, "ascending": "false"}
+              "order": order, "ascending": str(ascending).lower(), **extra}
     if tag_id is not None:
         params["tag_id"] = tag_id
     return _get("/events", **params)
