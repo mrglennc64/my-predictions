@@ -56,7 +56,10 @@ Calibrated probabilities, frozen before game time, graded in public. The
 python -m app.backfill                    # one-time: warm Elo on 2024-present,
                                           # tune K/HA on 2025 Brier
 python -m app.jobs.ingest_schedule        # 06:00 daily
-python -m app.jobs.ingest_odds            # every 30 min (needs ODDS_API_KEY, $29 tier)
+python -m app.jobs.ingest_polymarket      # every 30 min — market benchmark from
+                                          # Polymarket game markets (free, no key)
+python -m app.jobs.ingest_odds            # optional: sportsbook consensus
+                                          # (needs ODDS_API_KEY, $29 tier)
 python -m app.jobs.predict_and_freeze     # 09:00 daily + T-60min
 python -m app.jobs.grade                  # 06:30 daily (grades, THEN updates Elo)
 python -m app.jobs.healthcheck            # 07:30 daily (mechanical invariants)
@@ -66,6 +69,12 @@ python -m app.show_today                  # inspect the frozen slate
 Tuned 2026-07-20: K=4, HA=30, 2025 held-out Brier 0.24347 on 2,434 games
 (coin flip 0.250). Data: MLB Stats API (free, official). DB: SQLite via
 SQLAlchemy (`CONTEST_EDGE_DB` env to point at Postgres later).
+
+The market benchmark is Polymarket itself: every MLB game trades there
+(matched by league tag + ET-dated slug), prices track the sharp line within
+~1%, and reading them needs no key, no wallet, no subscription. Polymarket
+also lists per-game MLB Player Props events — the v2 props lane's data is
+already free.
 
 ## Roadmap
 

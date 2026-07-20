@@ -16,16 +16,19 @@ MODEL_ID = "elo_mlb_v1.0"
 
 
 def _market_p_home(conn, game_id: str) -> float | None:
-    row = conn.execute(
-        select(db.odds_snapshots.c.home_odds, db.odds_snapshots.c.away_odds)
-        .where(db.odds_snapshots.c.game_id == game_id,
-               db.odds_snapshots.c.book == "consensus",
-               db.odds_snapshots.c.market == "h2h")
-        .order_by(db.odds_snapshots.c.fetched_at.desc()).limit(1)).fetchone()
-    if row is None:
-        return None
-    p_home, _ = devig.devig_power([row.home_odds, row.away_odds])
-    return p_home
+    """Latest market probability: Polymarket first (free, always on), then
+    sportsbook consensus if an odds key is configured."""
+    for book in ("polymarket", "consensus"):
+        row = conn.execute(
+            select(db.odds_snapshots.c.home_odds, db.odds_snapshots.c.away_odds)
+            .where(db.odds_snapshots.c.game_id == game_id,
+                   db.odds_snapshots.c.book == book,
+                   db.odds_snapshots.c.market == "h2h")
+            .order_by(db.odds_snapshots.c.fetched_at.desc()).limit(1)).fetchone()
+        if row is not None:
+            p_home, _ = devig.devig_power([row.home_odds, row.away_odds])
+            return round(p_home, 4)
+    return None
 
 
 def main():
