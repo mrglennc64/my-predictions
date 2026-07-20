@@ -167,9 +167,17 @@ def run(minutes: int = 30):
             print(f"  scan error: {e}")
             signals = []
         with engine.begin() as conn:
-            _record(conn, signals)
-            _grade(conn)
+            recorded = _record(conn, signals)
+            graded = _grade(conn)
             print(f"[{_now_iso()[11:19]}] {_scoreboard(conn)}")
+        if recorded or graded:
+            # push fresh state to DIP while crypto windows are still pending,
+            # so its live view includes them (they resolve within minutes)
+            try:
+                from app.jobs import export_dip
+                export_dip.main()
+            except Exception as e:
+                print(f"  dip push skipped: {e}")
         time.sleep(POLL_S)
     with engine.begin() as conn:
         _grade(conn)
