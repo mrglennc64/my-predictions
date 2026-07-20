@@ -32,6 +32,7 @@ class CryptoSignal:
     slug: str
     symbol: str
     seconds_left: int
+    end_ts: int              # unix time the window resolves
     lead_pct: float          # spot move since window open
     model_p_up: float        # drift-diffusion estimate
     pm_p_up: float           # Polymarket "Up" price
@@ -103,6 +104,7 @@ def scan(threshold: float = 0.05, min_seconds_left: int = 60) -> list[CryptoSign
                 slug=slug,
                 symbol=symbol.upper(),
                 seconds_left=left,
+                end_ts=end_ts,
                 lead_pct=round(100 * (cur_px / open_px - 1), 3),
                 model_p_up=round(model_p, 3),
                 pm_p_up=round(pm_p_up, 3),

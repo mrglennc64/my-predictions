@@ -84,5 +84,8 @@ if __name__ == "__main__":
         run_screener()
     elif cmd == "crypto":
         run_crypto()
+    elif cmd == "crypto-watch":
+        from src.scanners import crypto_watch
+        crypto_watch.run(int(sys.argv[2]) if len(sys.argv) > 2 else 30)
     else:
         print(__doc__)

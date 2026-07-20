@@ -76,6 +76,24 @@ grades = Table(
 )
 
 
+crypto_signals = Table(                                # APPEND-ONLY signals; outcome
+    "crypto_signals", metadata,                        # filled once, then immutable
+    Column("signal_id", Integer, primary_key=True, autoincrement=True),
+    Column("slug", Text, nullable=False, unique=True),  # one signal per window
+    Column("symbol", Text, nullable=False),
+    Column("captured_at", Text, nullable=False),       # UTC ISO
+    Column("seconds_left", Integer, nullable=False),
+    Column("end_ts", Integer, nullable=False),
+    Column("lead_pct", Float, nullable=False),
+    Column("model_p_up", Float, nullable=False),
+    Column("pm_p_up", Float, nullable=False),
+    Column("outcome", Integer),                        # 1 up, 0 down; NULL pending
+    Column("model_brier", Float),
+    Column("pm_brier", Float),
+    Column("graded_at", Text),
+)
+
+
 def get_engine():
     return create_engine(DB_URL)
 
