@@ -98,6 +98,42 @@ def _metrics():
     }
 
 
+def _crypto():
+    with engine.connect() as conn:
+        graded = conn.execute(
+            select(db.crypto_signals)
+            .where(db.crypto_signals.c.outcome.isnot(None))
+            .order_by(db.crypto_signals.c.end_ts.desc())).fetchall()
+        pending = conn.execute(
+            select(db.crypto_signals)
+            .where(db.crypto_signals.c.outcome.is_(None))
+            .order_by(db.crypto_signals.c.end_ts.asc()).limit(10)).fetchall()
+    n = len(graded)
+    mb = sum(r.model_brier for r in graded) / n if n else None
+    pb = sum(r.pm_brier for r in graded) / n if n else None
+    model_wins = sum(1 for r in graded if r.model_brier < r.pm_brier)
+    row = lambda r: {
+        "slug": r.slug, "symbol": r.symbol, "captured_at": r.captured_at,
+        "seconds_left": r.seconds_left, "lead_pct": r.lead_pct,
+        "model_p_up": r.model_p_up, "pm_p_up": r.pm_p_up,
+        "outcome": r.outcome, "model_brier": r.model_brier,
+        "pm_brier": r.pm_brier,
+    }
+    return {
+        "graded": n,
+        "model_brier": round(mb, 4) if mb is not None else None,
+        "polymarket_brier": round(pb, 4) if pb is not None else None,
+        "model_wins": model_wins,
+        "recent_graded": [row(r) for r in graded[:20]],
+        "pending": [row(r) for r in pending],
+    }
+
+
+@app.get("/api/crypto")
+def api_crypto():
+    return _crypto()
+
+
 @app.get("/api/today")
 def api_today():
     return _today_rows()
@@ -118,6 +154,7 @@ def home():
     metrics = _metrics()
     today = _today_rows()
     graded = _ledger_rows(days=14)
+    cr = _crypto()
 
     def fmt(v, digits=3):
         return f"{v:.{digits}f}" if isinstance(v, float) else "—"
@@ -141,9 +178,30 @@ def home():
         "<tr><td colspan='7'>No graded games yet — first grades land the " \
         "morning after tonight's slate.</td></tr>"
 
+    def crow(r):
+        if r["outcome"] is None:
+            res, winner = "pending", ""
+        else:
+            res = "Up" if r["outcome"] else "Down"
+            winner = ("model" if r["model_brier"] < r["pm_brier"] else
+                      "polymarket" if r["pm_brier"] < r["model_brier"] else "tie")
+        return (f"<tr><td>{r['symbol']}</td><td class='m'>{r['slug'][-19:]}</td>"
+                f"<td>{r['lead_pct']:+.3f}%</td><td>{r['model_p_up']:.3f}</td>"
+                f"<td>{r['pm_p_up']:.3f}</td><td>{res}</td><td>{winner}</td></tr>")
+
+    crypto_head = ("nothing graded yet — watch is capturing"
+                   if not cr["graded"] else
+                   f"{cr['graded']} graded &nbsp;·&nbsp; model Brier "
+                   f"{cr['model_brier']} vs Polymarket {cr['polymarket_brier']}"
+                   f" &nbsp;·&nbsp; model closer on {cr['model_wins']}/{cr['graded']}")
+    crypto_rows = "\n".join(crow(r) for r in
+                            (cr["pending"] + cr["recent_graded"])[:20]) or \
+        "<tr><td colspan='7'>run: python scan.py crypto-watch 120</td></tr>"
+
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>Contest Edge — Ledger</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="30">
 <style>
  body{{font-family:'Segoe UI',system-ui,sans-serif;max-width:60rem;margin:2rem auto;
       padding:0 1rem;color:#1a2420;background:#fafbf8;line-height:1.5}}
@@ -167,6 +225,11 @@ Probabilities, never picks. Market benchmark: Polymarket.</p>
 <table><tr><th>Start (UTC)</th><th>Game</th><th>Model P(home)</th>
 <th>Market @ freeze</th><th>Polymarket now</th><th>Frozen at</th></tr>
 {today_rows}</table>
+<h2>Crypto up/down — live self-grading watch</h2>
+<p class="head">{crypto_head}</p>
+<table><tr><th>Sym</th><th>Window</th><th>Spot lead</th><th>Model P(Up)</th>
+<th>PM P(Up)</th><th>Result</th><th>Closer</th></tr>
+{crypto_rows}</table>
 <h2>Graded ledger (recent)</h2>
 <table><tr><th>Start (UTC)</th><th>Game</th><th>Score</th><th>Model P(home)</th>
 <th>Winner</th><th>Brier</th><th>Market Brier</th></tr>
