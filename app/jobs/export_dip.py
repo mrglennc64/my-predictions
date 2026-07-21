@@ -89,7 +89,7 @@ def _tennis_rows():
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for m in matches[:20]:
         fav_name, fav_p = max(m.sides, key=lambda s: s[1])
-        base = {"entity": fav_name, "gameid": m.title,
+        base = {"entity": fav_name, "gameid": m.slug or m.title,
                 "market": "match_moneyline", "date": today, "line": 0.5,
                 "domain": "tennis", "actual": ""}
         yield {**base, "modelp": round(fav_p, 3), "version": "venue_price",
@@ -98,6 +98,35 @@ def _tennis_rows():
             model_p = m.model_p1 if fav_name == m.sides[0][0] else 1 - m.model_p1
             yield {**base, "modelp": round(model_p, 3),
                    "version": "glicko2_v1", "source": "contest-edge"}
+
+
+def _lane_pair_rows():
+    """WNBA + weather as model-vs-venue pairs, same join contract as tennis.
+    event_key is the Polymarket EVENT slug so DIP can grade from settlement."""
+    from datetime import datetime, timezone
+    try:
+        from src.lanes import core, weather, wnba
+    except Exception:
+        return
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for lane, tag, attach, market in (("wnba", "wnba", wnba.attach, "team_moneyline"),
+                                      ("weather", "weather", weather.attach,
+                                       "temp_bucket")):
+        try:
+            rows = core.fetch_lane_rows(lane, tag)
+            attach(rows)
+        except Exception:
+            continue
+        for r in rows:
+            if r.model_p is None or not r.event_slug:
+                continue    # pairs only where we genuinely have a model view
+            base = {"entity": r.side, "gameid": r.event_slug, "market": market,
+                    "date": today, "line": 0.5, "domain": lane, "actual": ""}
+            yield {**base, "modelp": r.market_p, "version": "venue_price",
+                   "source": "polymarket"}
+            yield {**base, "modelp": r.model_p,
+                   "version": "elo_v1" if lane == "wnba" else "openmeteo_v1",
+                   "source": "contest-edge"}
 
 
 def main():
@@ -112,7 +141,7 @@ def main():
             # the live board (crypto windows are structural coin flips with
             # fees; DIP ingests Polymarket crypto itself now). Both lanes
     # keep grading in their own ledgers.
-    live = list(_tennis_rows())
+    live = list(_tennis_rows()) + list(_lane_pair_rows())
 
     for name, rows in (("dip_live.csv", live), ("dip_graded.csv", graded)):
         path = os.path.join(EXPORT_DIR, name)
@@ -134,7 +163,7 @@ def _push_to_dip(live: list[dict], graded: list[dict]):
             "player": r["entity"], "sport": r["domain"], "market": r["market"],
             "line": float(r["line"]), "probabilityOver": float(r["modelp"]),
             "event_key": r["gameid"], "timestamp": r["date"],
-            "source": r.get("source", "contest-edge"),
+            "source": r.get("source", "contest-edge"), "side": "over",
         } for r in live],
         "history": [{
             "p": float(r["modelp"]), "hit": int(r["actual"]),
