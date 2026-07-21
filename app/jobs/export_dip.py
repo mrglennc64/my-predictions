@@ -74,26 +74,31 @@ def _crypto_rows(conn):
 
 
 def _tennis_rows():
-    """Live tennis matches as market-derived predictions (no model yet):
-    the favorite side at the market's own price, domain-tagged so DIP can
-    score the lane separately."""
+    """Live tennis matches as predictions: Glicko-2 probability when both
+    players are rated (version glicko2_v1), market price otherwise."""
     try:
         from src.contest import tennis
         matches = tennis.fetch_matches()
+        tennis.attach_model(matches)
     except Exception:
         return
     from datetime import datetime, timezone
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for m in matches[:20]:
         fav_name, fav_p = max(m.sides, key=lambda s: s[1])
+        if m.model_p1 is not None:
+            model_p = m.model_p1 if fav_name == m.sides[0][0] else 1 - m.model_p1
+            version = "glicko2_v1"
+        else:
+            model_p, version = fav_p, "market_v1"
         yield {
             "entity": fav_name,
             "gameid": m.title,
             "market": "match_moneyline",
             "date": today,
             "line": 0.5,
-            "modelp": round(fav_p, 3),
-            "version": "market_v1",
+            "modelp": round(model_p, 3),
+            "version": version,
             "domain": "tennis",
             "actual": "",
         }

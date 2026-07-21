@@ -6,7 +6,8 @@ volume only, legs in the playable price band, cross-match independence, and
 fair combo payouts precomputed (fair multiple = 1e6 / product of cent prices).
 Quotes at or above fair are good; below fair is the margin you're paying.
 """
-from dataclasses import dataclass
+import unicodedata
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from itertools import combinations
 
@@ -21,6 +22,41 @@ class Match:
     title: str
     volume: float
     sides: list[tuple[str, float]]    # [(player, price)] both sides
+    slug: str = ""
+    model_p1: float | None = None     # Glicko-2 P(sides[0] wins); None unrated
+
+
+def key_from_full_name(name: str) -> str:
+    """'Pablo Carreno Busta' -> 'carreno busta|p' (tennis-data key format)."""
+    nk = unicodedata.normalize("NFKD", name or "")
+    nk = "".join(c for c in nk if not unicodedata.combining(c))
+    parts = nk.lower().replace(".", "").split()
+    if len(parts) < 2:
+        return ""
+    return " ".join(parts[1:]) + "|" + parts[0][0]
+
+
+def attach_model(matches: list["Match"]) -> int:
+    """Fill model_p1 from tennis_ratings; returns how many matches got a
+    model probability (both players rated, 5+ career matches each)."""
+    from sqlalchemy import select
+    from app import db
+    from src.models import glicko2
+    engine = db.init_db()
+    now = int(datetime.now(timezone.utc).timestamp())
+    with engine.connect() as conn:
+        rows = conn.execute(select(db.tennis_ratings)).fetchall()
+    book = {r.player: r for r in rows}
+    n = 0
+    for m in matches:
+        r1 = book.get(key_from_full_name(m.sides[0][0]))
+        r2 = book.get(key_from_full_name(m.sides[1][0]))
+        if r1 and r2 and r1.matches >= 5 and r2.matches >= 5:
+            a = glicko2.age(glicko2.Rating(r1.rating, r1.rd, r1.vol, r1.last_ts), now)
+            b = glicko2.age(glicko2.Rating(r2.rating, r2.rd, r2.vol, r2.last_ts), now)
+            m.model_p1 = round(glicko2.expected(a, b), 3)
+            n += 1
+    return n
 
 
 @dataclass
@@ -67,7 +103,8 @@ def fetch_matches(max_events: int = 200) -> list[Match]:
                 continue
             matches.append(Match(
                 title=title, volume=vol,
-                sides=[(str(outcomes[0]), p0), (str(outcomes[1]), p1)]))
+                sides=[(str(outcomes[0]), p0), (str(outcomes[1]), p1)],
+                slug=ev.get("slug", "")))
             break
     matches.sort(key=lambda m: -m.volume)
     return matches

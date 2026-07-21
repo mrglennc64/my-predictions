@@ -170,14 +170,33 @@ def api_crypto():
     return _crypto()
 
 
+def _tennis_scoreboard():
+    from sqlalchemy import select
+    with engine.connect() as conn:
+        rows = conn.execute(select(db.tennis_predictions)
+                            .where(db.tennis_predictions.c.outcome.isnot(None),
+                                   db.tennis_predictions.c.model_brier.isnot(None))
+                            ).fetchall()
+    n = len(rows)
+    if not n:
+        return {"graded": 0}
+    return {"graded": n,
+            "model_brier": round(sum(r.model_brier for r in rows) / n, 4),
+            "market_brier": round(sum(r.market_brier for r in rows) / n, 4),
+            "model_wins": sum(1 for r in rows
+                              if r.model_brier < r.market_brier)}
+
+
 @app.get("/api/tennis")
 def api_tennis():
     from src.contest import tennis
     matches = tennis.fetch_matches()
+    tennis.attach_model(matches)
     slips = tennis.build_slips(matches)
     return {
-        "matches": [{"title": m.title, "volume": m.volume,
-                     "sides": m.sides} for m in matches],
+        "scoreboard": _tennis_scoreboard(),
+        "matches": [{"title": m.title, "volume": m.volume, "sides": m.sides,
+                     "model_p1": m.model_p1} for m in matches],
         "slips": [{"style": s.style, "p_hit": round(s.p_hit, 3),
                    "fair_multiple": s.fair_multiple,
                    "legs": s.legs} for s in slips],
@@ -188,13 +207,29 @@ def api_tennis():
 def tennis_page():
     from src.contest import tennis
     matches = tennis.fetch_matches()
+    tennis.attach_model(matches)
     slips = tennis.build_slips(matches)
+    sb = _tennis_scoreboard()
+    sb_line = ("model ledger: nothing graded yet — freezing has begun"
+               if not sb["graded"] else
+               f"tennis ledger: {sb['graded']} graded · model Brier "
+               f"{sb['model_brier']} vs market {sb['market_brier']} · model "
+               f"closer on {sb['model_wins']}/{sb['graded']}")
 
-    match_rows = "\n".join(
-        f"<tr><td>{m.title}</td>"
-        f"<td>{m.sides[0][0]} {100*m.sides[0][1]:.0f}c</td>"
-        f"<td>{m.sides[1][0]} {100*m.sides[1][1]:.0f}c</td>"
-        f"<td>${m.volume:,.0f}</td></tr>" for m in matches[:20])
+    def mrow(m):
+        model = f"{m.model_p1:.2f}" if m.model_p1 is not None else "—"
+        edge = ""
+        if m.model_p1 is not None:
+            gap = m.model_p1 - m.sides[0][1]
+            if abs(gap) >= 0.07:
+                side = m.sides[0][0] if gap > 0 else m.sides[1][0]
+                edge = f"<b>model likes {side} ({gap:+.2f})</b>"
+        return (f"<tr><td>{m.title}</td>"
+                f"<td>{m.sides[0][0]} {100*m.sides[0][1]:.0f}c</td>"
+                f"<td>{m.sides[1][0]} {100*m.sides[1][1]:.0f}c</td>"
+                f"<td>{model}</td><td>${m.volume:,.0f}</td><td>{edge}</td></tr>")
+
+    match_rows = "\n".join(mrow(m) for m in matches[:20])
 
     def slip_block(style):
         blocks = []
@@ -221,12 +256,15 @@ def tennis_page():
     border-bottom:2px solid #1a2420;padding:.35rem .6rem .3rem 0}}
  td{{border-bottom:1px solid #d8e0da;padding:.45rem .6rem .45rem 0;vertical-align:top}}
  .note{{color:#5c6b63;font-size:.82rem}}
+ .head{{font-family:Consolas,monospace;color:#0e7a4c}}
 </style></head><body>
-<h1>Tennis Combos — fair prices from live markets</h1>
+<h1>Tennis — Glicko-2 model + fair-priced combos</h1>
+<p class="head">{sb_line}</p>
 <p class="note">Rule: build the slip on Polymarket, read their quoted payout,
-compare to FAIR below. Quote &ge; fair = good price. These use the market's own
-leg prices (no model): singles only, volume &ge; $2k, legs 35–85c,
-three different matches. Refreshes every 2 min.</p>
+compare to FAIR below. Quote &ge; fair = good price. Slips use market leg
+prices; the MODEL P column is our Glicko-2 rating engine (trained on 18.8k
+matches, holdout Brier 0.228) — edge flags mark &ge;7-point disagreements
+worth a look, not automatic bets. Refreshes every 2 min.</p>
 <h2>Anchor slips (highest hit chance)</h2>
 <table><tr><th>P(hit)</th><th>Fair payout</th><th>Legs</th></tr>
 {slip_block('anchor')}</table>
@@ -234,7 +272,8 @@ three different matches. Refreshes every 2 min.</p>
 <table><tr><th>P(hit)</th><th>Fair payout</th><th>Legs</th></tr>
 {slip_block('leverage')}</table>
 <h2>Live singles matches (by volume)</h2>
-<table><tr><th>Match</th><th>Side A</th><th>Side B</th><th>Vol 24h</th></tr>
+<table><tr><th>Match</th><th>Side A</th><th>Side B</th><th>Model P(A)</th>
+<th>Vol 24h</th><th>Divergence</th></tr>
 {match_rows}</table>
 <p class="note"><a href="/">back to ledger</a> ·
 raw: <a href="/api/tennis">/api/tennis</a></p>

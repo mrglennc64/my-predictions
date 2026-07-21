@@ -98,6 +98,35 @@ crypto_signals = Table(                                # APPEND-ONLY signals; ou
 )
 
 
+tennis_ratings = Table(
+    "tennis_ratings", metadata,
+    Column("player", Text, primary_key=True),          # accent-folded lowercase
+    Column("display", Text, nullable=False),
+    Column("tour", Text, nullable=False),              # 'atp' | 'wta'
+    Column("rating", Float, nullable=False),
+    Column("rd", Float, nullable=False),
+    Column("vol", Float, nullable=False),
+    Column("last_ts", Integer, nullable=False),
+    Column("matches", Integer, nullable=False),
+)
+
+tennis_predictions = Table(                            # APPEND-ONLY like the rest
+    "tennis_predictions", metadata,
+    Column("pred_id", Integer, primary_key=True, autoincrement=True),
+    Column("slug", Text, nullable=False, unique=True), # PM event slug
+    Column("title", Text, nullable=False),
+    Column("p1", Text, nullable=False),                # first-listed player
+    Column("p2", Text, nullable=False),
+    Column("model_p1", Float),                         # NULL if a player unrated
+    Column("market_p1", Float, nullable=False),
+    Column("frozen_at", Text, nullable=False),
+    Column("outcome", Integer),                        # 1 = p1 won; NULL pending
+    Column("model_brier", Float),
+    Column("market_brier", Float),
+    Column("graded_at", Text),
+)
+
+
 def get_engine():
     return create_engine(DB_URL)
 
