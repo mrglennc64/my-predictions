@@ -170,6 +170,77 @@ def api_crypto():
     return _crypto()
 
 
+@app.get("/api/tennis")
+def api_tennis():
+    from src.contest import tennis
+    matches = tennis.fetch_matches()
+    slips = tennis.build_slips(matches)
+    return {
+        "matches": [{"title": m.title, "volume": m.volume,
+                     "sides": m.sides} for m in matches],
+        "slips": [{"style": s.style, "p_hit": round(s.p_hit, 3),
+                   "fair_multiple": s.fair_multiple,
+                   "legs": s.legs} for s in slips],
+    }
+
+
+@app.get("/tennis", response_class=HTMLResponse)
+def tennis_page():
+    from src.contest import tennis
+    matches = tennis.fetch_matches()
+    slips = tennis.build_slips(matches)
+
+    match_rows = "\n".join(
+        f"<tr><td>{m.title}</td>"
+        f"<td>{m.sides[0][0]} {100*m.sides[0][1]:.0f}c</td>"
+        f"<td>{m.sides[1][0]} {100*m.sides[1][1]:.0f}c</td>"
+        f"<td>${m.volume:,.0f}</td></tr>" for m in matches[:20])
+
+    def slip_block(style):
+        blocks = []
+        for s in (x for x in slips if x.style == style):
+            legs = "<br>".join(f"&nbsp;&nbsp;{l} — {100*p:.0f}c"
+                               for l, p in s.legs)
+            blocks.append(
+                f"<tr><td>{s.p_hit:.1%}</td>"
+                f"<td><b>{s.fair_multiple}x</b></td><td>{legs}</td></tr>")
+        return "\n".join(blocks) or "<tr><td colspan='3'>none today</td></tr>"
+
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<title>Contest Edge — Tennis Combos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="120">
+<style>
+ body{{font-family:'Segoe UI',system-ui,sans-serif;max-width:60rem;margin:2rem auto;
+      padding:0 1rem;color:#1a2420;background:#fafbf8;line-height:1.5}}
+ h1{{font-size:1.5rem}} h2{{font-size:1.05rem;margin:1.6rem 0 .4rem}}
+ table{{border-collapse:collapse;width:100%;font-size:.85rem;
+       font-variant-numeric:tabular-nums}}
+ th{{text-align:left;font-family:Consolas,monospace;font-size:.7rem;
+    text-transform:uppercase;letter-spacing:.07em;color:#5c6b63;
+    border-bottom:2px solid #1a2420;padding:.35rem .6rem .3rem 0}}
+ td{{border-bottom:1px solid #d8e0da;padding:.45rem .6rem .45rem 0;vertical-align:top}}
+ .note{{color:#5c6b63;font-size:.82rem}}
+</style></head><body>
+<h1>Tennis Combos — fair prices from live markets</h1>
+<p class="note">Rule: build the slip on Polymarket, read their quoted payout,
+compare to FAIR below. Quote &ge; fair = good price. These use the market's own
+leg prices (no model): singles only, volume &ge; $2k, legs 35–85c,
+three different matches. Refreshes every 2 min.</p>
+<h2>Anchor slips (highest hit chance)</h2>
+<table><tr><th>P(hit)</th><th>Fair payout</th><th>Legs</th></tr>
+{slip_block('anchor')}</table>
+<h2>Leverage slips (2+ coin-flip legs — Combo Cup differentiation)</h2>
+<table><tr><th>P(hit)</th><th>Fair payout</th><th>Legs</th></tr>
+{slip_block('leverage')}</table>
+<h2>Live singles matches (by volume)</h2>
+<table><tr><th>Match</th><th>Side A</th><th>Side B</th><th>Vol 24h</th></tr>
+{match_rows}</table>
+<p class="note"><a href="/">back to ledger</a> ·
+raw: <a href="/api/tennis">/api/tennis</a></p>
+</body></html>"""
+
+
 @app.get("/api/today")
 def api_today():
     return _today_rows()

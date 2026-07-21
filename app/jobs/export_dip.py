@@ -73,6 +73,32 @@ def _crypto_rows(conn):
         }
 
 
+def _tennis_rows():
+    """Live tennis matches as market-derived predictions (no model yet):
+    the favorite side at the market's own price, domain-tagged so DIP can
+    score the lane separately."""
+    try:
+        from src.contest import tennis
+        matches = tennis.fetch_matches()
+    except Exception:
+        return
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for m in matches[:20]:
+        fav_name, fav_p = max(m.sides, key=lambda s: s[1])
+        yield {
+            "entity": fav_name,
+            "gameid": m.title,
+            "market": "match_moneyline",
+            "date": today,
+            "line": 0.5,
+            "modelp": round(fav_p, 3),
+            "version": "market_v1",
+            "domain": "tennis",
+            "actual": "",
+        }
+
+
 def main():
     os.makedirs(EXPORT_DIR, exist_ok=True)
     engine = db.init_db()
@@ -80,6 +106,7 @@ def main():
     with engine.connect() as conn:
         for row in list(_mlb_rows(conn)) + list(_crypto_rows(conn)):
             (graded if row["actual"] != "" else live).append(row)
+    live.extend(_tennis_rows())
 
     for name, rows in (("dip_live.csv", live), ("dip_graded.csv", graded)):
         path = os.path.join(EXPORT_DIR, name)
