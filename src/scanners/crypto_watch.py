@@ -21,6 +21,9 @@ CAPTURE_S = 180      # freeze the signal in the last 3 minutes of the window
 POLL_S = 30
 TRADE_EDGE = 0.10    # paper-trade only when |model - market| clears this
 STAKE = 100.0        # hypothetical dollars per trade
+MIN_ASK = 0.10       # no lottery fills: penny asks are illiquid + oracle-noise
+MAX_DIVERGENCE = 0.35  # if we disagree with the market THIS much, assume the
+                       # market knows something we don't (oracle gap) — no trade
 
 
 def _now_iso() -> str:
@@ -28,9 +31,19 @@ def _now_iso() -> str:
 
 
 def _paper_trade(s) -> tuple[str | None, float | None]:
-    """Decide side and fetch the real order-book ask for it. The mid can lie;
-    the ask is what a buy would actually cost. No fill, no trade."""
+    """Decide side and price the fill against the real order book.
+
+    Gates, each of which killed a real failure mode in the ledger:
+    - |edge| in [TRADE_EDGE, MAX_DIVERGENCE]: below = noise; above = the
+      market almost certainly knows something the model doesn't (the 15m
+      oracle is Chainlink, our spot feed is Coinbase — huge disagreements
+      are usually our blind spot, not their mistake).
+    - ask >= MIN_ASK: penny asks are lottery tickets on empty books.
+    - book depth at the ask must cover the stake, or there is no fill.
+    """
     edge = s.model_p_up - s.pm_p_up
+    if abs(edge) > MAX_DIVERGENCE:
+        return None, None
     if edge >= TRADE_EDGE and s.up_token:
         side, token = "up", s.up_token
     elif edge <= -TRADE_EDGE and s.down_token:
@@ -38,12 +51,18 @@ def _paper_trade(s) -> tuple[str | None, float | None]:
     else:
         return None, None
     try:
-        ask = float(clob.get_price(token, "buy")["price"])
+        book = clob.get_book(token)
+        asks = sorted(((float(a["price"]), float(a["size"]))
+                       for a in book.get("asks", [])), key=lambda x: x[0])
     except Exception:
         return None, None
-    if not (0.01 < ask < 0.99):
+    if not asks:
         return None, None
-    # model's probability for the side we buy, vs what the book charges
+    ask, size = asks[0]
+    if not (MIN_ASK <= ask < 0.99):
+        return None, None
+    if ask * size < STAKE:
+        return None, None  # can't actually fill $100 at this price
     model_p = s.model_p_up if side == "up" else 1 - s.model_p_up
     if model_p - ask < TRADE_EDGE:
         return None, None  # spread ate the edge — pass

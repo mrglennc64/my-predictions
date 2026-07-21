@@ -153,6 +153,10 @@ def _crypto():
         "paper_trades": len(trades),
         "paper_wins": sum(1 for r in trades if r.trade_pnl > 0),
         "paper_pnl": round(sum(r.trade_pnl for r in trades), 2),
+        # excludes legacy penny-ask fills recorded before the MIN_ASK/depth
+        # gates existed — the number to actually believe
+        "paper_pnl_solid": round(sum(r.trade_pnl for r in trades
+                                     if r.trade_price >= 0.10), 2),
         "paper_stake_per_trade": 100,
         "kelly_pnl": round(kelly_pnl, 2),
         "kelly_note": "quarter-Kelly of $10k bankroll, sized off real ask",
@@ -229,8 +233,8 @@ def home():
                 f"<td>{trade}</td></tr>")
 
     paper_bit = (f" &nbsp;·&nbsp; paper: {cr['paper_trades']} trades, "
-                 f"{cr['paper_wins']} wins, ${cr['paper_pnl']:+.2f} flat / "
-                 f"${cr['kelly_pnl']:+.2f} ¼-Kelly"
+                 f"{cr['paper_wins']} wins, ${cr['paper_pnl_solid']:+.2f} "
+                 f"(asks ≥ 0.10; ${cr['paper_pnl']:+.2f} incl. legacy penny fills)"
                  if cr.get("paper_trades") else "")
     split_bit = ""
     if cr.get("up_windows") and cr.get("down_windows"):
