@@ -74,8 +74,11 @@ def _crypto_rows(conn):
 
 
 def _tennis_rows():
-    """Live tennis matches as predictions: Glicko-2 probability when both
-    players are rated (version glicko2_v1), market price otherwise."""
+    """Live tennis matches as TWO sources sharing one event identity — the
+    cross-source join DIP's /decision needs to price an edge:
+      source contest-edge : our Glicko-2 fair value   (rated matches only)
+      source polymarket   : the venue's price for the same question
+    Unrated matches get only the venue row — no fabricated model claim."""
     try:
         from src.contest import tennis
         matches = tennis.fetch_matches()
@@ -86,22 +89,15 @@ def _tennis_rows():
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for m in matches[:20]:
         fav_name, fav_p = max(m.sides, key=lambda s: s[1])
+        base = {"entity": fav_name, "gameid": m.title,
+                "market": "match_moneyline", "date": today, "line": 0.5,
+                "domain": "tennis", "actual": ""}
+        yield {**base, "modelp": round(fav_p, 3), "version": "venue_price",
+               "source": "polymarket"}
         if m.model_p1 is not None:
             model_p = m.model_p1 if fav_name == m.sides[0][0] else 1 - m.model_p1
-            version = "glicko2_v1"
-        else:
-            model_p, version = fav_p, "market_v1"
-        yield {
-            "entity": fav_name,
-            "gameid": m.title,
-            "market": "match_moneyline",
-            "date": today,
-            "line": 0.5,
-            "modelp": round(model_p, 3),
-            "version": version,
-            "domain": "tennis",
-            "actual": "",
-        }
+            yield {**base, "modelp": round(model_p, 3),
+                   "version": "glicko2_v1", "source": "contest-edge"}
 
 
 def main():
@@ -112,17 +108,16 @@ def main():
         for row in list(_mlb_rows(conn)) + list(_crypto_rows(conn)):
             if row["actual"] != "":
                 graded.append(row)          # ALL graded history feeds evidence
-            elif row["domain"] != "mlb":
-                live.append(row)            # owner call: no baseball on the
-                                            # DIP board; the MLB ledger still
-                                            # freezes/grades on the site
-    # tennis leads the board
-    live = list(_tennis_rows()) + live
+            # owner + DIP-spec call: neither baseball nor pending crypto on
+            # the live board (crypto windows are structural coin flips with
+            # fees; DIP ingests Polymarket crypto itself now). Both lanes
+    # keep grading in their own ledgers.
+    live = list(_tennis_rows())
 
     for name, rows in (("dip_live.csv", live), ("dip_graded.csv", graded)):
         path = os.path.join(EXPORT_DIR, name)
         with open(path, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=FIELDS)
+            w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
             w.writeheader()
             w.writerows(rows)
     print(f"[export_dip] live {len(live)} rows, graded {len(graded)} rows "
@@ -139,7 +134,7 @@ def _push_to_dip(live: list[dict], graded: list[dict]):
             "player": r["entity"], "sport": r["domain"], "market": r["market"],
             "line": float(r["line"]), "probabilityOver": float(r["modelp"]),
             "event_key": r["gameid"], "timestamp": r["date"],
-            "source": "contest-edge",
+            "source": r.get("source", "contest-edge"),
         } for r in live],
         "history": [{
             "p": float(r["modelp"]), "hit": int(r["actual"]),
