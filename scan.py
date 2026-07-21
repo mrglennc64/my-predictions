@@ -87,6 +87,12 @@ if __name__ == "__main__":
     elif cmd == "crypto-watch":
         from src.scanners import crypto_watch
         crypto_watch.run(int(sys.argv[2]) if len(sys.argv) > 2 else 30)
+    elif cmd == "combos":
+        from src.contest import combos, optimizer
+        n_legs = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+        games = optimizer.fetch_slate()
+        print(f"Building {n_legs}-leg combos from {len(games)} games...")
+        print(combos.report(combos.build(games, n_legs=n_legs), n_legs))
     elif cmd == "contest":
         from src.contest import optimizer
         field = int(sys.argv[2]) if len(sys.argv) > 2 else 1000
