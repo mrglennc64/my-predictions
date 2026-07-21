@@ -280,6 +280,87 @@ raw: <a href="/api/tennis">/api/tennis</a></p>
 </body></html>"""
 
 
+def _lane_stats():
+    from sqlalchemy import select
+    with engine.connect() as conn:
+        rows = conn.execute(select(db.lane_predictions)).fetchall()
+        trows = conn.execute(select(db.tennis_predictions)).fetchall()
+    lanes = {}
+    def add(lane, r):
+        d = lanes.setdefault(lane, {"frozen": 0, "graded": 0, "modeled": 0,
+                                    "m_sq": 0.0, "k_sq": 0.0, "m_n": 0})
+        d["frozen"] += 1
+        if r["outcome"] is not None:
+            d["graded"] += 1
+            if r["model_brier"] is not None:
+                d["m_sq"] += r["model_brier"]
+                d["k_sq"] += r["market_brier"]
+                d["m_n"] += 1
+        if r["model_p"] is not None:
+            d["modeled"] += 1
+    for r in rows:
+        add(r.lane, {"outcome": r.outcome, "model_brier": r.model_brier,
+                     "market_brier": r.market_brier, "model_p": r.model_p})
+    for r in trows:
+        add("tennis", {"outcome": r.outcome, "model_brier": r.model_brier,
+                       "market_brier": r.market_brier, "model_p": r.model_p1})
+    out = []
+    for lane, d in lanes.items():
+        out.append({
+            "lane": lane, "frozen": d["frozen"], "graded": d["graded"],
+            "modeled": d["modeled"],
+            "model_brier": round(d["m_sq"] / d["m_n"], 4) if d["m_n"] else None,
+            "market_brier": round(d["k_sq"] / d["m_n"], 4) if d["m_n"] else None,
+            "model_graded": d["m_n"],
+        })
+    out.sort(key=lambda x: -x["frozen"])
+    return out
+
+
+@app.get("/api/lanes")
+def api_lanes():
+    return _lane_stats()
+
+
+@app.get("/lanes", response_class=HTMLResponse)
+def lanes_page():
+    stats = _lane_stats()
+    rows = "\n".join(
+        f"<tr><td>{s['lane']}</td><td>{s['frozen']}</td><td>{s['graded']}</td>"
+        f"<td>{s['modeled']}</td>"
+        f"<td>{s['model_brier'] if s['model_brier'] is not None else '—'}</td>"
+        f"<td>{s['market_brier'] if s['market_brier'] is not None else '—'}</td>"
+        f"<td>{s['model_graded']}</td>"
+        f"<td>{'<b>model</b>' if s['model_brier'] is not None and s['market_brier'] is not None and s['model_brier'] < s['market_brier'] else ('market' if s['model_brier'] is not None else 'mirror lane')}</td></tr>"
+        for s in stats) or "<tr><td colspan='8'>first pipeline run pending</td></tr>"
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<title>Contest Edge — Lane Comparison</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="120">
+<style>
+ body{{font-family:'Segoe UI',system-ui,sans-serif;max-width:56rem;margin:2rem auto;
+      padding:0 1rem;color:#1a2420;background:#fafbf8;line-height:1.5}}
+ h1{{font-size:1.4rem}} table{{border-collapse:collapse;width:100%;font-size:.88rem;
+ font-variant-numeric:tabular-nums}}
+ th{{text-align:left;font-family:Consolas,monospace;font-size:.7rem;
+    text-transform:uppercase;letter-spacing:.07em;color:#5c6b63;
+    border-bottom:2px solid #1a2420;padding:.4rem .6rem .3rem 0}}
+ td{{border-bottom:1px solid #d8e0da;padding:.5rem .6rem .5rem 0}}
+ .note{{color:#5c6b63;font-size:.82rem}}
+</style></head><body>
+<h1>Which lane is best? The ledger decides.</h1>
+<p class="note">Every lane runs the same discipline: freeze before resolution,
+grade from the market's own settlement, append-only. "Winner" = lower Brier on
+the modeled, graded subset. Mirror lanes have no model yet — they accumulate
+graded market data until one earns its way in. Lower Brier is better.</p>
+<table><tr><th>Lane</th><th>Frozen</th><th>Graded</th><th>Modeled</th>
+<th>Model Brier</th><th>Market Brier</th><th>Compared on</th><th>Ahead</th></tr>
+{rows}</table>
+<p class="note"><a href="/">ledger</a> · <a href="/tennis">tennis</a> ·
+raw: <a href="/api/lanes">/api/lanes</a></p>
+</body></html>"""
+
+
 @app.get("/api/today")
 def api_today():
     return _today_rows()

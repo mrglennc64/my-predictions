@@ -8,13 +8,15 @@ Usage: python -m app.run_pipeline
 from datetime import datetime, timezone
 
 from app.jobs import (export_dip, grade, healthcheck, ingest_polymarket,
-                      ingest_schedule, predict_and_freeze, tennis_lane)
+                      ingest_schedule, lanes_run, predict_and_freeze,
+                      tennis_lane)
 
 STEPS = [("ingest_schedule", ingest_schedule.main),
          ("ingest_polymarket", ingest_polymarket.main),
          ("predict_and_freeze", predict_and_freeze.main),
          ("grade", grade.main),
          ("tennis_lane", tennis_lane.main),
+         ("lanes_run", lanes_run.main),
          ("export_dip", export_dip.main),
          ("healthcheck", healthcheck.main)]
 

@@ -127,6 +127,23 @@ tennis_predictions = Table(                            # APPEND-ONLY like the re
 )
 
 
+lane_predictions = Table(                              # APPEND-ONLY, all lanes
+    "lane_predictions", metadata,
+    Column("row_id", Integer, primary_key=True, autoincrement=True),
+    Column("lane", Text, nullable=False),              # wnba|weather|ufc|soccer
+    Column("mslug", Text, nullable=False, unique=True),  # market-level slug
+    Column("title", Text, nullable=False),
+    Column("side", Text, nullable=False),              # what P refers to
+    Column("model_p", Float),                          # NULL = no model (mirror)
+    Column("market_p", Float, nullable=False),
+    Column("frozen_at", Text, nullable=False),
+    Column("outcome", Integer),                        # 1 side won; NULL pending
+    Column("model_brier", Float),
+    Column("market_brier", Float),
+    Column("graded_at", Text),
+)
+
+
 def get_engine():
     return create_engine(DB_URL)
 
