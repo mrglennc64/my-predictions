@@ -105,8 +105,14 @@ def main():
     live, graded = [], []
     with engine.connect() as conn:
         for row in list(_mlb_rows(conn)) + list(_crypto_rows(conn)):
-            (graded if row["actual"] != "" else live).append(row)
-    live.extend(_tennis_rows())
+            if row["actual"] != "":
+                graded.append(row)          # ALL graded history feeds evidence
+            elif row["domain"] != "mlb":
+                live.append(row)            # owner call: no baseball on the
+                                            # DIP board; the MLB ledger still
+                                            # freezes/grades on the site
+    # tennis leads the board
+    live = list(_tennis_rows()) + live
 
     for name, rows in (("dip_live.csv", live), ("dip_graded.csv", graded)):
         path = os.path.join(EXPORT_DIR, name)
