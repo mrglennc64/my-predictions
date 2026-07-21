@@ -87,5 +87,13 @@ if __name__ == "__main__":
     elif cmd == "crypto-watch":
         from src.scanners import crypto_watch
         crypto_watch.run(int(sys.argv[2]) if len(sys.argv) > 2 else 30)
+    elif cmd == "contest":
+        from src.contest import optimizer
+        field = int(sys.argv[2]) if len(sys.argv) > 2 else 1000
+        top = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+        games = optimizer.fetch_slate()
+        print(f"Optimizing entry over {len(games)} games "
+              f"(field {field}, top {top} paid)...")
+        print(optimizer.report(optimizer.optimize(games, field, top)))
     else:
         print(__doc__)
