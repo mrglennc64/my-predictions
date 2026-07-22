@@ -48,11 +48,14 @@ def main():
 
     graded = 0
     with engine.begin() as conn:
+        from sqlalchemy import func
         pending = conn.execute(
             select(db.lane_predictions)
             .where(db.lane_predictions.c.outcome.is_(None))
-            .order_by(db.lane_predictions.c.row_id.asc())
-            .limit(600)).fetchall()      # oldest first — those have resolved
+            .order_by(func.random())
+            .limit(600)).fetchall()      # random batch each run — resolvable
+                                         # rows get sampled without end-time
+                                         # bookkeeping
         for row in pending:
             outcome = core.resolved_outcome(row.mslug)
             if outcome is None:
