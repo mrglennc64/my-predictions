@@ -14,7 +14,8 @@ import requests
 
 CITIES = {
     "nyc": (40.78, -73.97, "fahrenheit"), "new york": (40.78, -73.97, "fahrenheit"),
-    "los angeles": (34.05, -118.24, "fahrenheit"), "la": (34.05, -118.24, "fahrenheit"),
+    "los angeles": (34.05, -118.24, "fahrenheit"),
+    "las vegas": (36.08, -115.15, "fahrenheit"),
     "chicago": (41.98, -87.90, "fahrenheit"), "miami": (25.79, -80.32, "fahrenheit"),
     "philadelphia": (39.87, -75.23, "fahrenheit"), "atlanta": (33.63, -84.44, "fahrenheit"),
     "dallas": (32.90, -97.04, "fahrenheit"), "houston": (29.65, -95.28, "fahrenheit"),
@@ -34,6 +35,13 @@ _BELOW = re.compile(r"(\d+)\s*°?\s*[FC]?\s*(?:or below|or lower|or less)", re.I
 
 _forecast_cache: dict[tuple, dict] = {}
 
+# Station-vs-gridpoint offset fitted on resolved markets (app/weather_bias.py,
+# train window 07-11..07-15, settled-bucket midpoint minus forecast). The
+# miami/nyc magnitudes are too large for pure station bias — likely a
+# resolution-definition mismatch; the empirical offset still prices better on
+# held-out days, but READ THOSE MARKETS' RULES before staking anything.
+STATION_BIAS = {"atlanta": +1.3, "dallas": +2.4, "miami": -9.8, "nyc": -8.5}
+
 
 def _phi(x):
     return 0.5 * (1 + math.erf(x / math.sqrt(2)))
@@ -52,21 +60,38 @@ def _city_and_date(slug: str, title: str):
     return city, d
 
 
-def _forecast_max(city: str, d: date) -> float | None:
+ENSEMBLE = "https://ensemble-api.open-meteo.com/v1/ensemble"
+
+
+def _ensemble_maxes(city: str, d: date) -> list[float]:
+    """Daily-max distribution across the 31 GFS ensemble members — empirical
+    spread instead of a deterministic forecast plus a guessed sigma."""
     lat, lon, unit = CITIES[city]
     key = (city, d.isoformat())
     if key not in _forecast_cache:
+        _forecast_cache[key] = []
         try:
-            r = requests.get("https://api.open-meteo.com/v1/forecast", params={
+            r = requests.get(ENSEMBLE, params={
                 "latitude": lat, "longitude": lon,
-                "daily": "temperature_2m_max", "temperature_unit": unit,
-                "timezone": "auto", "forecast_days": 7}, timeout=30)
-            data = r.json().get("daily", {})
-            _forecast_cache[key] = dict(zip(data.get("time", []),
-                                            data.get("temperature_2m_max", [])))
+                "hourly": "temperature_2m", "models": "gfs_seamless",
+                "temperature_unit": unit, "timezone": "auto",
+                "forecast_days": 7}, timeout=60)
+            h = r.json().get("hourly", {})
+            times = h.get("time", [])
+            idx = [i for i, t in enumerate(times)
+                   if str(t).startswith(d.isoformat())]
+            maxes = []
+            for k, vals in h.items():
+                if k == "time" or not k.startswith("temperature_2m"):
+                    continue
+                vs = [vals[i] for i in idx
+                      if i < len(vals) and vals[i] is not None]
+                if vs:
+                    maxes.append(max(vs))
+            _forecast_cache[key] = maxes
         except requests.RequestException:
-            _forecast_cache[key] = {}
-    return _forecast_cache[key].get(d.isoformat())
+            pass
+    return _forecast_cache[key]
 
 
 def _bucket(text: str):
@@ -92,16 +117,18 @@ def attach(rows) -> int:
         bucket = _bucket(r.side) or _bucket(r.title)
         if not bucket:
             continue
-        fc = _forecast_max(city, d)
-        if fc is None:
+        members = _ensemble_maxes(city, d)
+        if len(members) < 10:
             continue
-        lead = max(0, (d - today).days)
+        offset = STATION_BIAS.get(city, 0.0)
+        members = [m + offset for m in members]
+        # per-member kernel absorbs station-vs-gridpoint noise; the SPREAD
+        # comes from the ensemble itself, not an assumed sigma
         unit = CITIES[city][2]
-        sigma = (1.3, 1.8, 2.5)[min(lead, 2)]
-        if unit == "celsius":
-            sigma *= 5 / 9
+        s0 = 0.9 if unit == "fahrenheit" else 0.5
         lo, hi = bucket
-        p = _phi((hi - fc) / sigma) - _phi((lo - fc) / sigma)
+        p = sum(_phi((hi - m) / s0) - _phi((lo - m) / s0)
+                for m in members) / len(members)
         r.model_p = round(min(max(p, 0.001), 0.999), 3)
         n += 1
     return n
