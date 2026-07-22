@@ -73,8 +73,12 @@ def fetch_lane_rows(lane: str, tag_slug: str, max_events: int = 150,
 def resolved_outcome(mslug: str) -> int | None:
     """Settled result for a market slug — index-0 outcome won (1) or lost (0).
     Requires explicit closure, same rule as every other lane."""
+    # Gamma's bare /markets returns ONLY open markets and closed=true ONLY
+    # settled ones — a settled market is invisible without the flag.
     try:
-        markets = gamma._get("/markets", slug=mslug)
+        markets = gamma._get("/markets", slug=mslug, closed="true")
+        if not markets:
+            markets = gamma._get("/markets", slug=mslug)
     except Exception:
         return None
     for mk in markets if isinstance(markets, list) else [markets]:

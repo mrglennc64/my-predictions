@@ -50,7 +50,9 @@ def main():
     with engine.begin() as conn:
         pending = conn.execute(
             select(db.lane_predictions)
-            .where(db.lane_predictions.c.outcome.is_(None))).fetchall()
+            .where(db.lane_predictions.c.outcome.is_(None))
+            .order_by(db.lane_predictions.c.row_id.asc())
+            .limit(600)).fetchall()      # oldest first — those have resolved
         for row in pending:
             outcome = core.resolved_outcome(row.mslug)
             if outcome is None:

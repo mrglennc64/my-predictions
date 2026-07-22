@@ -66,10 +66,18 @@ def main():
             rh, ra = elos.get(g.home_team), elos.get(g.away_team)
             if rh is None or ra is None:
                 continue
+            market_p = _market_p_home(conn, g.game_id)
+            start = datetime.fromisoformat(g.start_time.replace("Z", "+00:00"))
+            mins_out = (start - now).total_seconds() / 60
+            # freeze only once a market benchmark exists, or as a last chance
+            # at T-90min — freezing days early leaves market_p NULL forever
+            # in an append-only table
+            if market_p is None and mins_out > 90:
+                continue
             conn.execute(insert(db.predictions).values(
                 game_id=g.game_id, model_id=MODEL_ID,
                 p_home=round(elo.expected_home(rh, ra, ha), 4),
-                market_p_home=_market_p_home(conn, g.game_id),
+                market_p_home=market_p,
                 frozen_at=now_iso))
             frozen += 1
     print(f"[predict_and_freeze] froze {frozen}, already-frozen {skipped} "
