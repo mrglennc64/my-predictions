@@ -12,17 +12,39 @@ from datetime import date, datetime, timezone
 
 import requests
 
+# Coordinates are the RESOLUTION STATIONS from the markets' own rules (each
+# resolves at a specific airport via Wunderground) — not city centers. KLAX
+# vs downtown LA differs by ~10F in summer; Seoul resolves at Incheon, 40km
+# away. Forecasting the wrong point was the model's largest error source.
 CITIES = {
-    "nyc": (40.78, -73.97, "fahrenheit"), "new york": (40.78, -73.97, "fahrenheit"),
-    "los angeles": (34.05, -118.24, "fahrenheit"),
-    "las vegas": (36.08, -115.15, "fahrenheit"),
-    "chicago": (41.98, -87.90, "fahrenheit"), "miami": (25.79, -80.32, "fahrenheit"),
-    "philadelphia": (39.87, -75.23, "fahrenheit"), "atlanta": (33.63, -84.44, "fahrenheit"),
-    "dallas": (32.90, -97.04, "fahrenheit"), "houston": (29.65, -95.28, "fahrenheit"),
-    "seattle": (47.45, -122.31, "fahrenheit"), "denver": (39.85, -104.66, "fahrenheit"),
-    "seoul": (37.57, 126.98, "celsius"), "london": (51.51, -0.13, "celsius"),
-    "paris": (48.86, 2.35, "celsius"), "tokyo": (35.68, 139.69, "celsius"),
-    "moscow": (55.75, 37.62, "celsius"), "toronto": (43.68, -79.63, "celsius"),
+    "nyc": (40.7772, -73.8726, "fahrenheit"),          # KLGA LaGuardia
+    "new york": (40.7772, -73.8726, "fahrenheit"),
+    "los angeles": (33.9425, -118.4081, "fahrenheit"),  # KLAX
+    "las vegas": (36.0840, -115.1537, "fahrenheit"),    # KLAS
+    "chicago": (41.9786, -87.9048, "fahrenheit"),       # KORD O'Hare
+    "miami": (25.7959, -80.2870, "fahrenheit"),         # KMIA
+    "philadelphia": (39.8719, -75.2411, "fahrenheit"),  # KPHL
+    "atlanta": (33.6407, -84.4277, "fahrenheit"),       # KATL
+    "dallas": (32.8471, -96.8518, "fahrenheit"),        # KDAL Love Field
+    "houston": (29.6454, -95.2789, "fahrenheit"),       # KHOU Hobby
+    "seattle": (47.4489, -122.3094, "fahrenheit"),      # KSEA
+    "san francisco": (37.6213, -122.3790, "fahrenheit"),  # KSFO
+    "austin": (30.1975, -97.6664, "fahrenheit"),        # KAUS
+    "denver": (39.7017, -104.7522, "fahrenheit"),       # KBKF Buckley
+    "seoul": (37.4602, 126.4407, "celsius"),            # Incheon Intl
+    "london": (51.5053, 0.0553, "celsius"),             # City Airport
+    "paris": (48.9694, 2.4414, "celsius"),              # Le Bourget
+    "tokyo": (35.5494, 139.7798, "celsius"),            # Haneda
+    "toronto": (43.6777, -79.6248, "celsius"),          # Pearson
+    "munich": (48.3538, 11.7861, "celsius"),
+    "madrid": (40.4722, -3.5609, "celsius"),            # Barajas
+    "amsterdam": (52.3105, 4.7683, "celsius"),          # Schiphol
+    "milan": (45.6301, 8.7255, "celsius"),              # Malpensa
+    "warsaw": (52.1657, 20.9671, "celsius"),            # Chopin
+    "helsinki": (60.3183, 24.9630, "celsius"),          # Vantaa
+    "singapore": (1.3644, 103.9915, "celsius"),         # Changi
+    "taipei": (25.0694, 121.5525, "celsius"),           # Songshan
+    "mexico city": (19.4363, -99.0721, "celsius"),      # Benito Juarez
 }
 _MONTHS = {m.lower(): i + 1 for i, m in enumerate(
     ["January", "February", "March", "April", "May", "June", "July",
@@ -35,12 +57,11 @@ _BELOW = re.compile(r"(\d+)\s*°?\s*[FC]?\s*(?:or below|or lower|or less)", re.I
 
 _forecast_cache: dict[tuple, dict] = {}
 
-# Station-vs-gridpoint offset fitted on resolved markets (app/weather_bias.py,
-# train window 07-11..07-15, settled-bucket midpoint minus forecast). The
-# miami/nyc magnitudes are too large for pure station bias — likely a
-# resolution-definition mismatch; the empirical offset still prices better on
-# held-out days, but READ THOSE MARKETS' RULES before staking anything.
-STATION_BIAS = {"atlanta": +1.3, "dallas": +2.4, "miami": -9.8, "nyc": -8.5}
+# Residual bias after pointing at the true resolution stations. The old
+# fitted offsets (miami -9.8, nyc -8.5) were the WRONG-COORDINATES error in
+# disguise; with station coords they no longer apply. Refit from
+# app/weather_bias.py after a week of station-based grades if needed.
+STATION_BIAS: dict[str, float] = {}
 
 
 def _phi(x):
