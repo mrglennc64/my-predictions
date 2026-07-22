@@ -6,7 +6,7 @@ their model hook, which is what makes them comparable.
 """
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from src.polymarket import gamma
 
@@ -30,12 +30,17 @@ def fetch_lane_rows(lane: str, tag_slug: str, max_events: int = 150,
     tag_id = gamma.get_tag_id(tag_slug)
     if not tag_id:
         return []
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # end_date_min guards against stale never-closed zombies, but Polymarket
+    # stamps some events (weather) with endDate at NOON of event day while
+    # trading runs to midnight — look back 36h so today's markets stay
+    # visible through the near-resolution window.
+    floor = (datetime.now(timezone.utc) - timedelta(hours=36)
+             ).strftime("%Y-%m-%dT%H:%M:%SZ")
     events = []
     for offset in (0, 100):
         batch = gamma.get_events(closed=False, tag_id=tag_id, limit=100,
                                  offset=offset, order="volume24hr",
-                                 end_date_min=now)
+                                 end_date_min=floor)
         events.extend(batch)
         if len(batch) < 100:
             break

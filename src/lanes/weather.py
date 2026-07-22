@@ -125,6 +125,10 @@ def _bucket(text: str):
     m = _BELOW.search(text)
     if m:
         return -math.inf, float(m.group(1)) + 0.5
+    m = re.fullmatch(r"\s*(\d+)\s*°?\s*[FC]?\s*", text)   # single-degree
+    if m:                                                  # bucket: '26°C'
+        n = float(m.group(1))
+        return n - 0.5, n + 0.5
     return None
 
 
