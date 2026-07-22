@@ -70,6 +70,11 @@ def _phi(x):
 
 def _city_and_date(slug: str, title: str):
     text = (slug or "").replace("-", " ") + " " + (title or "").lower()
+    # v1 models the daily MAX only. "Lowest temperature" markets have
+    # mirrored mechanics (a min only falls) — pricing them with a max
+    # forecast silently poisoned the lane until this guard existed.
+    if "highest temperature" not in text.lower():
+        return None, None
     city = next((c for c in sorted(CITIES, key=len, reverse=True)
                  if c in text), None)
     m = re.search(r"(january|february|march|april|may|june|july|august|"
