@@ -361,6 +361,52 @@ raw: <a href="/api/lanes">/api/lanes</a></p>
 </body></html>"""
 
 
+@app.get("/api/triggers")
+def api_triggers():
+    from src.weather_trigger import digest
+    return digest.compute()
+
+
+@app.get("/triggers", response_class=HTMLResponse)
+def triggers_page():
+    from src.weather_trigger import digest
+    d = digest.compute()
+    rows = "\n".join(
+        f"<tr><td>{c['city']}</td><td>{c['locks']}</td>"
+        f"<td>{'—' if c['median_lag_s'] is None else str(c['median_lag_s']//60)+'m'}</td>"
+        f"<td>{'—' if c['p90_lag_s'] is None else str(c['p90_lag_s']//60)+'m'}</td>"
+        f"<td>${c['median_edge_dollars'] or 0:.0f}</td></tr>"
+        for c in d["cities"]) or "<tr><td colspan='5'>no locks logged yet</td></tr>"
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<title>Contest Edge — Weather Near-Resolution Triggers</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="120">
+<style>
+ body{{font-family:'Segoe UI',system-ui,sans-serif;max-width:56rem;margin:2rem auto;
+      padding:0 1rem;color:#1a2420;background:#fafbf8;line-height:1.5}}
+ h1{{font-size:1.4rem}} table{{border-collapse:collapse;width:100%;font-size:.88rem;
+ font-variant-numeric:tabular-nums}}
+ th{{text-align:left;font-family:Consolas,monospace;font-size:.7rem;
+    text-transform:uppercase;letter-spacing:.07em;color:#5c6b63;
+    border-bottom:2px solid #1a2420;padding:.4rem .6rem .3rem 0}}
+ td{{border-bottom:1px solid #d8e0da;padding:.5rem .6rem .5rem 0}}
+ .note{{color:#5c6b63;font-size:.82rem}} .head{{font-family:Consolas,monospace;color:#0e7a4c}}
+</style></head><body>
+<h1>Weather near-resolution — measured lag &amp; fillable edge</h1>
+<p class="note">Read-only. A bucket LOCKS when the settlement station's observed
+daily max mechanically decides it (already exceeded, ± a rounding margin). We log
+the lag until the market reprices past 0.95/0.05, and the dollars fillable at
+better-than-fair in that gap. Edge-dollars, not edge-percent — depth is the
+whole question.</p>
+<p class="head">{d['global_verdict']}</p>
+<table><tr><th>City</th><th>Locks</th><th>Median lag</th><th>P90 lag</th>
+<th>Median $ fillable</th></tr>
+{rows}</table>
+<p class="note"><a href="/">ledger</a> · <a href="/lanes">lanes</a> ·
+raw: <a href="/api/triggers">/api/triggers</a></p>
+</body></html>"""
+
+
 @app.get("/api/today")
 def api_today():
     return _today_rows()

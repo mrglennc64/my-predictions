@@ -90,6 +90,16 @@ if __name__ == "__main__":
     elif cmd == "weather-watch":
         from src.lanes import weather_watch
         weather_watch.run(int(sys.argv[2]) if len(sys.argv) > 2 else 720)
+    elif cmd == "weather-trigger":                    # v1 lag-logger + edge-$
+        from src.weather_trigger import scan as wt
+        arg = sys.argv[2] if len(sys.argv) > 2 else "720"
+        if arg == "once":                             # single pass, for cron
+            wt.scan_once(wt.db.init_db(), verbose=True)
+        else:
+            wt.run(int(arg))
+    elif cmd == "weather-rules":                      # parse rules -> review file
+        from src.weather_trigger import review
+        review.main()
     elif cmd == "combos":
         from src.contest import combos, optimizer
         n_legs = int(sys.argv[2]) if len(sys.argv) > 2 else 3

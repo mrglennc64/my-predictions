@@ -54,6 +54,10 @@ def _market_price_at(token_id: str, ts: int) -> float | None:
 
 def _city_date_from_slug(slug: str):
     text = slug.replace("-", " ")
+    # max-temp forecasts must never score lowest-temp markets (they poisoned
+    # every earlier backtest run — Tokyo's 0.27 "model Brier" was this)
+    if "highest temperature" not in text:
+        return None, None
     city = next((c for c in sorted(CITIES, key=len, reverse=True)
                  if c in text), None)
     import re

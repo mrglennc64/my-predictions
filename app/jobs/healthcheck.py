@@ -52,6 +52,31 @@ def main():
                      f"today's games" + ("" if todays_snaps else
                                          " (WARN: none — key unset/dead?)"))
 
+        # 3b. weather trigger_events: no CONCEDE ever precedes its own LOCK
+        #     (t_conceded < t_locked is impossible under correct operation)
+        te = db.trigger_events
+        ev = conn.execute(select(te.c.mslug, te.c.kind, te.c.snapshot_at)
+                          .order_by(te.c.id)).fetchall()
+        locked_at, bad_lag = {}, 0
+        for r in ev:
+            if r.kind == "LOCK":
+                locked_at.setdefault(r.mslug, r.snapshot_at)
+            elif r.kind == "CONCEDE" and r.mslug in locked_at \
+                    and r.snapshot_at < locked_at[r.mslug]:
+                bad_lag += 1
+        if bad_lag:
+            failures.append(f"{bad_lag} trigger_events concede before lock")
+
+        # 3c. locks should carry book data (LOCK or a later SNAPSHOT with an
+        #     ask). Transient CLOB failures happen, so this fails only when
+        #     it's systematic (>20% of locks bookless) — otherwise a note.
+        locks = {r.mslug for r in ev if r.kind == "LOCK"}
+        with_book = {r.mslug for r in conn.execute(
+            select(te.c.mslug).where(te.c.best_ask.isnot(None)))}
+        bookless = len(locks - with_book)
+        if locks and bookless / len(locks) > 0.20:
+            failures.append(f"{bookless}/{len(locks)} locks have no book data")
+
         # 4. Elo ratings stable (zero-sum: mean stays near 1500)
         mean_elo = conn.execute(
             select(func.avg(db.teams.c.elo))

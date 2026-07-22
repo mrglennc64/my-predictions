@@ -1,4 +1,8 @@
-"""Weather near-resolution watcher — mechanical facts vs lagging prices.
+"""DEPRECATED v0 — superseded by src/weather_trigger/ (rules-parsed stations,
+book-walking edge-dollars, tested cores). Not scheduled anywhere; kept only so
+the historical weather_watch table rows stay interpretable.
+
+Weather near-resolution watcher — mechanical facts vs lagging prices.
 
 A daily max can only rise. Two irreversible states per bucket, one-sided by
 construction:
