@@ -144,6 +144,21 @@ lane_predictions = Table(                              # APPEND-ONLY, all lanes
 )
 
 
+weather_watch = Table(                                 # near-resolution lag log
+    "weather_watch", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("mslug", Text, nullable=False, unique=True),
+    Column("city", Text, nullable=False),
+    Column("state", Text, nullable=False),             # DEAD | PROVEN
+    Column("obs_max", Float, nullable=False),          # station max at detection
+    Column("boundary", Float, nullable=False),
+    Column("market_p_detect", Float, nullable=False),  # price when fact locked
+    Column("detected_at", Text, nullable=False),
+    Column("priced_at", Text),                         # when market caught up
+    Column("lag_s", Integer),                          # the entire edge, measured
+)
+
+
 def get_engine():
     return create_engine(DB_URL)
 

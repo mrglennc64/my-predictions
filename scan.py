@@ -87,6 +87,9 @@ if __name__ == "__main__":
     elif cmd == "crypto-watch":
         from src.scanners import crypto_watch
         crypto_watch.run(int(sys.argv[2]) if len(sys.argv) > 2 else 30)
+    elif cmd == "weather-watch":
+        from src.lanes import weather_watch
+        weather_watch.run(int(sys.argv[2]) if len(sys.argv) > 2 else 720)
     elif cmd == "combos":
         from src.contest import combos, optimizer
         n_legs = int(sys.argv[2]) if len(sys.argv) > 2 else 3
