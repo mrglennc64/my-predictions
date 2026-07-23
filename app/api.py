@@ -367,16 +367,32 @@ def api_triggers():
     return digest.compute()
 
 
+def _lag_cell(c):
+    """Median lag, with sample size — a single lock is not a pattern."""
+    ml = c["median_lag_s"]
+    if ml is None:
+        return "—"
+    n = c.get("n_conceded", 0)
+    tag = f" <span class='note'>(n={n})</span>" if n < 3 else ""
+    return f"{ml // 60}m{tag}"
+
+
 @app.get("/triggers", response_class=HTMLResponse)
 def triggers_page():
     from src.weather_trigger import digest
     d = digest.compute()
     rows = "\n".join(
         f"<tr><td>{c['city']}</td><td>{c['locks']}</td>"
-        f"<td>{'—' if c['median_lag_s'] is None else str(c['median_lag_s']//60)+'m'}</td>"
-        f"<td>{'—' if c['p90_lag_s'] is None else str(c['p90_lag_s']//60)+'m'}</td>"
-        f"<td>${c['median_edge_dollars'] or 0:.0f}</td></tr>"
-        for c in d["cities"]) or "<tr><td colspan='5'>no locks logged yet</td></tr>"
+        f"<td>{c.get('market_led', 0) or '—'}</td>"
+        f"<td>{_lag_cell(c)}</td>"
+        f"<td>{c['resolved_correct']}/{c['resolved']}</td>"
+        f"<td>${c['median_edge_dollars'] or 0:.0f}</td>"
+        f"<td>${(c.get('realistic_fill_200') or 0):.0f}</td></tr>"
+        for c in d["cities"]) or "<tr><td colspan='7'>no locks logged yet</td></tr>"
+    gate = d.get("gate_open")
+    banner = (f"<p class='gate {'open' if gate else 'closed'}'>"
+              f"{'✓ GATE OPEN' if gate else '⛔ GATE CLOSED — paper only'} · "
+              f"{d.get('resolution_verdict', '')}</p>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>Contest Edge — Weather Near-Resolution Triggers</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -391,16 +407,25 @@ def triggers_page():
     border-bottom:2px solid #1a2420;padding:.4rem .6rem .3rem 0}}
  td{{border-bottom:1px solid #d8e0da;padding:.5rem .6rem .5rem 0}}
  .note{{color:#5c6b63;font-size:.82rem}} .head{{font-family:Consolas,monospace;color:#0e7a4c}}
+ .gate{{font-family:Consolas,monospace;font-size:.82rem;padding:.5rem .7rem;
+    border-radius:.3rem;margin:.6rem 0}}
+ .gate.closed{{background:#fdeaea;color:#9a2626;border:1px solid #e6b8b8}}
+ .gate.open{{background:#e8f6ee;color:#0e7a4c;border:1px solid #a8dcc0}}
 </style></head><body>
 <h1>Weather near-resolution — measured lag &amp; fillable edge</h1>
 <p class="note">Read-only. A bucket LOCKS when the settlement station's observed
 daily max mechanically decides it (already exceeded, ± a rounding margin). We log
 the lag until the market reprices past 0.95/0.05, and the dollars fillable at
 better-than-fair in that gap. Edge-dollars, not edge-percent — depth is the
-whole question.</p>
+whole question. <b>Mkt led</b> = buckets the market priced dead <i>before</i> the
+mechanical lock — the market beat the instrument, so there was no edge window
+(excluded from lag). <b>Resolved</b> = locks that settled our way / settled.
+<b>Real $200</b> = profit-if-correct after walking a real $200 order into the
+book (what survives slippage), vs the whole-book notional.</p>
+{banner}
 <p class="head">{d['global_verdict']}</p>
-<table><tr><th>City</th><th>Locks</th><th>Median lag</th><th>P90 lag</th>
-<th>Median $ fillable</th></tr>
+<table><tr><th>City</th><th>Locks</th><th>Mkt led</th><th>Median lag</th>
+<th>Resolved</th><th>Median $ fillable</th><th>Real $200</th></tr>
 {rows}</table>
 <p class="note"><a href="/">ledger</a> · <a href="/lanes">lanes</a> ·
 raw: <a href="/api/triggers">/api/triggers</a></p>

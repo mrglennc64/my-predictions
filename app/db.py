@@ -182,6 +182,23 @@ trigger_events = Table(                                # APPEND-ONLY snapshot lo
 )
 
 
+trigger_grades = Table(                                # APPEND-ONLY, one per bucket
+    "trigger_grades", metadata,                        # the verdict on each lock:
+    Column("id", Integer, primary_key=True, autoincrement=True),  # did it settle
+    Column("mslug", Text, nullable=False, unique=True),  # the way we locked it?
+    Column("city", Text),
+    Column("side", Text),
+    Column("state", Text),                             # PROVEN | DEAD, as locked
+    Column("boundary", Float),
+    Column("unit", Text),
+    Column("locked_obs_max", Float),                   # station max at lock
+    Column("locked_at", Text),                         # first LOCK snapshot_at
+    Column("outcome", Integer),                        # resolved_outcome: 1 | 0
+    Column("lock_correct", Integer, nullable=False),   # 1 if lock matched result
+    Column("graded_at", Text, nullable=False),         # UTC ISO
+)
+
+
 def get_engine():
     return create_engine(DB_URL)
 

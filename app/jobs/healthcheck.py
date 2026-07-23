@@ -77,6 +77,22 @@ def main():
         if locks and bookless / len(locks) > 0.20:
             failures.append(f"{bookless}/{len(locks)} locks have no book data")
 
+        # 3d. trigger_grades integrity + gate status. lock_correct must be
+        #     boolean; a WRONG lock isn't a code bug (it's a strategy signal),
+        #     so it's reported, not failed. The gate (real money) stays a
+        #     mechanical fact: ≥50 resolved at 100%, never a human override.
+        tg = db.trigger_grades
+        bad = conn.execute(select(func.count()).select_from(tg)
+                           .where(tg.c.lock_correct.notin_([0, 1]))).scalar()
+        if bad:
+            failures.append(f"{bad} trigger_grades with non-boolean lock_correct")
+        tg_n = conn.execute(select(func.count()).select_from(tg)).scalar() or 0
+        tg_ok = conn.execute(select(func.count()).select_from(tg)
+                             .where(tg.c.lock_correct == 1)).scalar() or 0
+        gate = tg_n >= 50 and tg_ok == tg_n
+        trig_note = (f"trigger locks resolved {tg_ok}/{tg_n}, "
+                     f"gate {'OPEN' if gate else 'CLOSED'}")
+
         # 4. Elo ratings stable (zero-sum: mean stays near 1500)
         mean_elo = conn.execute(
             select(func.avg(db.teams.c.elo))
@@ -84,7 +100,7 @@ def main():
         if abs(mean_elo - 1500) > 15:
             failures.append(f"Elo mean drifted to {mean_elo:.1f}")
 
-    print(f"[healthcheck] {odds_note}; Elo mean {mean_elo:.1f}")
+    print(f"[healthcheck] {odds_note}; {trig_note}; Elo mean {mean_elo:.1f}")
     if failures:
         for f in failures:
             print(f"[healthcheck] FAIL: {f}")
