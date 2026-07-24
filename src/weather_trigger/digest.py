@@ -13,6 +13,18 @@ from app import db
 
 STAKE = 200.0   # the paper order we actually simulate against the book
 
+# A lock is only "solid" if the observed max clears the boundary by more than the
+# bare lock margin — enough that a whole-degree Wunderground revision can't flip
+# it. Locks that cleared by less are AT_RISK: mechanically true now, but thin.
+SOLID_CLEARANCE = {"fahrenheit": 2.0, "celsius": 1.0}
+
+
+def _at_risk(obs_max, boundary, unit):
+    """True if a lock cleared its boundary by less than the solid cushion."""
+    if obs_max is None or boundary is None:
+        return False
+    return abs(obs_max - boundary) < SOLID_CLEARANCE.get(unit, 2.0)
+
 
 def _iso(s):
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
@@ -69,6 +81,7 @@ def compute():
                 d["locked_at"] = r.snapshot_at
                 d["edge_dollars"] = r.edge_dollars
                 d["depth_json"] = r.depth_json
+                d["at_risk"] = _at_risk(r.obs_max, r.boundary, r.unit)
         if r.kind == "CONCEDE":
             d["concedes"].append(r.snapshot_at)
 
@@ -76,13 +89,20 @@ def compute():
     span_start = span_end = None
     for slug, d in by_slug.items():
         c = cities.setdefault(d["city"], {"locks": 0, "lags": [], "edges": [],
-                                          "market_led": 0, "fills": []})
+                                          "market_led": 0, "fills": [],
+                                          "at_risk": 0, "solid_fills": []})
         if "locked_at" not in d:
             continue
         c["locks"] += 1
+        at_risk = d.get("at_risk", False)
+        if at_risk:
+            c["at_risk"] += 1
         if d.get("edge_dollars") is not None:
             c["edges"].append(d["edge_dollars"])
-        c["fills"].append(_fill_profit(d.get("depth_json")))
+        fill = _fill_profit(d.get("depth_json"))
+        c["fills"].append(fill)
+        if not at_risk:
+            c["solid_fills"].append(fill)
         t0 = _iso(d["locked_at"])
         span_start = min(span_start or t0, t0)
         span_end = max(span_end or t0, t0)
@@ -105,7 +125,7 @@ def compute():
             select(tg.c.city, func.count(),
                    func.sum(tg.c.lock_correct)).group_by(tg.c.city))}
 
-    out_cities, total_edge, total_fill = [], 0.0, 0.0
+    out_cities, total_edge, total_fill, total_solid_fill = [], 0.0, 0.0, 0.0
     for city, c in sorted(cities.items(), key=lambda kv: -kv[1]["locks"]):
         med_lag = _pctile(c["lags"], 0.5)
         p90_lag = _pctile(c["lags"], 0.9)
@@ -113,6 +133,7 @@ def compute():
         med_fill = _pctile(c["fills"], 0.5)
         total_edge += sum(e for e in c["edges"] if e)
         total_fill += sum(f for f in c["fills"] if f)
+        total_solid_fill += sum(f for f in c["solid_fills"] if f)
         res_n, res_ok = by_city_res.get(city, (0, 0))
         depth_word = ("no fills logged" if not c["edges"]
                       else "toy depth" if (med_edge or 0) < 25
@@ -126,6 +147,7 @@ def compute():
                    + depth_word)
         out_cities.append({
             "city": city, "locks": c["locks"], "market_led": c["market_led"],
+            "at_risk": c["at_risk"], "solid_locks": c["locks"] - c["at_risk"],
             "n_conceded": len(c["lags"]),
             "median_lag_s": med_lag, "p90_lag_s": p90_lag,
             "median_edge_dollars": med_edge,
@@ -162,6 +184,8 @@ def compute():
         "observed_days": round(days, 3),
         "total_edge_dollars_at_lock": round(total_edge, 2),
         "total_realistic_fill_200": round(total_fill, 2),
+        "total_solid_fill_200": round(total_solid_fill, 2),
+        "at_risk_locks": sum(c["at_risk"] for c in cities.values()),
         "est_dollars_per_week_upper_bound": (round(per_week, 2)
                                              if per_week is not None else None),
         "resolved": resolved, "resolved_correct": correct,

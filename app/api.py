@@ -383,12 +383,13 @@ def triggers_page():
     d = digest.compute()
     rows = "\n".join(
         f"<tr><td>{c['city']}</td><td>{c['locks']}</td>"
+        f"<td>{c.get('at_risk', 0) or '—'}</td>"
         f"<td>{c.get('market_led', 0) or '—'}</td>"
         f"<td>{_lag_cell(c)}</td>"
         f"<td>{c['resolved_correct']}/{c['resolved']}</td>"
         f"<td>${c['median_edge_dollars'] or 0:.0f}</td>"
         f"<td>${(c.get('realistic_fill_200') or 0):.0f}</td></tr>"
-        for c in d["cities"]) or "<tr><td colspan='7'>no locks logged yet</td></tr>"
+        for c in d["cities"]) or "<tr><td colspan='8'>no locks logged yet</td></tr>"
     gate = d.get("gate_open")
     banner = (f"<p class='gate {'open' if gate else 'closed'}'>"
               f"{'✓ GATE OPEN' if gate else '⛔ GATE CLOSED — paper only'} · "
@@ -446,9 +447,15 @@ mechanical lock — the market beat the instrument, so there was no edge window
 book (what survives slippage), vs the whole-book notional.</p>
 {banner}
 <p class="head">{d['global_verdict']}</p>
-<table><tr><th>City</th><th>Locks</th><th>Mkt led</th><th>Median lag</th>
+<table><tr><th>City</th><th>Locks</th><th>At risk</th><th>Mkt led</th><th>Median lag</th>
 <th>Resolved</th><th>Median $ fillable</th><th>Real $200</th></tr>
 {rows}</table>
+<p class="note"><b>At risk</b> = locks that cleared their boundary by less than
+the solid cushion (2°F / 1°C) — mechanically true now, but a whole-degree
+revision could flip them; excluded from the solid total. <b>Solid $200 fill</b>
+(at-risk excluded): <b>${d.get('total_solid_fill_200', 0):.0f}</b> of
+${d.get('total_realistic_fill_200', 0):.0f}, with {d.get('at_risk_locks', 0)}
+at-risk lock(s).</p>
 {bias_html}
 <p class="note"><a href="/">ledger</a> · <a href="/lanes">lanes</a> ·
 raw: <a href="/api/triggers">/api/triggers</a></p>
