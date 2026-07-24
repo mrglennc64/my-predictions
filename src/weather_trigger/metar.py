@@ -17,6 +17,14 @@ METAR_URL = "https://aviationweather.gov/api/data/metar"
 # 6-hourly maximum temperature group in RMK: 1 s TTT  (s: 0=+,1=-; TTT tenths °C)
 _MAX6 = re.compile(r"(?<!\d)1([01])(\d{3})(?!\d)")
 
+# The 1sTTT group summarises the 6 hours BEFORE the report. Counting it whenever
+# the report itself lands after local midnight imports yesterday-evening heat on
+# US stations (UTC−5/6): the 06Z group covers 18:00–24:00 local the day before.
+# Only trust a group whose whole window is on/after local midnight. Measured on
+# 2026-07-24 this was the entire high-read bias — Houston +9.4°F, Dallas +6.5°F —
+# while international stations (no 1sTTT group) already reconciled clean.
+_MAX6_WINDOW_S = 6 * 3600
+
 
 def parse_6hr_max_c(raw_ob: str | None) -> float | None:
     """Extract the 6-hourly max temp (°C) from a METAR's RMK section, if any."""
@@ -31,7 +39,9 @@ def parse_6hr_max_c(raw_ob: str | None) -> float | None:
 
 
 def observed_max_c(obs: list[dict], since_epoch: int) -> float | None:
-    """Running max °C at/after since_epoch, blending body temp + 6hr-max group."""
+    """Running max °C over the local day: every body temp at/after since_epoch,
+    plus each 6hr-max group whose full 6-hour window is also at/after since_epoch
+    (so it can't carry heat from before local midnight)."""
     temps = []
     for o in obs:
         ts = o.get("obsTime") or o.get("reportTime")
@@ -39,12 +49,10 @@ def observed_max_c(obs: list[dict], since_epoch: int) -> float | None:
             when = int(ts)
         except (TypeError, ValueError):
             continue
-        if when < since_epoch:
-            continue
-        if o.get("temp") is not None:
+        if when >= since_epoch and o.get("temp") is not None:
             temps.append(float(o["temp"]))
         g = parse_6hr_max_c(o.get("rawOb"))
-        if g is not None:
+        if g is not None and when - _MAX6_WINDOW_S >= since_epoch:
             temps.append(g)
     return max(temps) if temps else None
 

@@ -36,14 +36,32 @@ def test_6hr_max_parse():
 
 
 def test_observed_max_blend():
+    H = 3600
+    M = 1_000_000                                    # local midnight epoch
     obs = [
-        {"obsTime": 1000, "temp": 20.0, "rawOb": "X"},         # before window
-        {"obsTime": 2000, "temp": 24.0, "rawOb": "X"},
-        {"obsTime": 3000, "temp": 23.0, "rawOb": "Y RMK 10261"},  # 6hr max 26.1
+        {"obsTime": M - H, "temp": 30.0, "rawOb": "X"},          # yesterday body
+        {"obsTime": M + 2 * H, "temp": 24.0, "rawOb": "X"},      # today body 24
+        # group reported 1h after midnight -> window [M-5h, M+1h] crosses midnight
+        {"obsTime": M + H, "temp": 20.0, "rawOb": "Y RMK 10300"},   # 30.0, DROP
+        # group reported 6h after midnight -> window [M, M+6h] fully today
+        {"obsTime": M + 6 * H, "temp": 22.0, "rawOb": "Z RMK 10261"},  # 26.1, KEEP
     ]
-    assert metar.observed_max_c(obs, since_epoch=1500) == 26.1   # group wins
-    assert metar.observed_max_c(obs, since_epoch=2500) == 26.1
+    # yesterday's body (30) and the cross-midnight group (30) are both excluded;
+    # the fully-today afternoon group (26.1) wins over today's body (24).
+    assert metar.observed_max_c(obs, since_epoch=M) == 26.1
     assert metar.observed_max_c([], 0) is None
+
+
+def test_6hr_group_clamp():
+    H = 3600
+    M = 2_000_000
+    g = "RMK 10350"                                   # 6hr-max group = 35.0C
+    def one(offset):                                  # a single report at M+offset
+        return metar.observed_max_c(
+            [{"obsTime": M + offset, "temp": 10.0, "rawOb": g}], since_epoch=M)
+    assert one(6 * H) == 35.0        # window [M, M+6h] exactly today -> counted
+    assert one(6 * H - 1) == 10.0    # window starts 1s before midnight -> dropped
+    assert one(H) == 10.0            # early-morning report, window mostly yesterday
 
 
 def test_local_midnight():
