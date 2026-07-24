@@ -93,6 +93,15 @@ def main():
         trig_note = (f"trigger locks resolved {tg_ok}/{tg_n}, "
                      f"gate {'OPEN' if gate else 'CLOSED'}")
 
+        # 3e. reconciliation: delta must equal obs_max - won_hi (never NULL when
+        #     won_hi is set) — a silent NULL delta would hide the bias.
+        rc = db.trigger_reconciliations
+        bad_delta = conn.execute(
+            select(func.count()).select_from(rc)
+            .where(rc.c.won_hi.isnot(None), rc.c.delta_deg.is_(None))).scalar()
+        if bad_delta:
+            failures.append(f"{bad_delta} reconciliations missing delta_deg")
+
         # 4. Elo ratings stable (zero-sum: mean stays near 1500)
         mean_elo = conn.execute(
             select(func.avg(db.teams.c.elo))

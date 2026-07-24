@@ -167,8 +167,19 @@ def compute():
         "resolved": resolved, "resolved_correct": correct,
         "lock_accuracy": accuracy, "gate_min_resolved": GATE_MIN,
         "gate_open": gate_open, "resolution_verdict": res_line,
+        "station_bias": _station_bias(),
         "global_verdict": verdict,
     }
+
+
+def _station_bias():
+    # Lazy import: revision -> gamma pulls the network stack; keep digest import
+    # cheap for callers that only want the lag/fill view.
+    from src.weather_trigger import revision
+    try:
+        return revision.station_bias()
+    except Exception:
+        return {"stations": [], "n_events": 0}
 
 
 def print_digest():
@@ -179,4 +190,8 @@ def print_digest():
     if not d["cities"]:
         print("  (no locks logged yet)")
     print("  " + d["resolution_verdict"])
+    for s in d.get("station_bias", {}).get("stations", []):
+        if s["max_delta"] > 0:
+            print(f"  bias {s['city']}: max {s['max_delta']:+}{s['unit'][:1].upper()}"
+                  f" over {s['n']} -> margin {s['suggested_margin']}")
     print("  " + d["global_verdict"])

@@ -393,6 +393,28 @@ def triggers_page():
     banner = (f"<p class='gate {'open' if gate else 'closed'}'>"
               f"{'✓ GATE OPEN' if gate else '⛔ GATE CLOSED — paper only'} · "
               f"{d.get('resolution_verdict', '')}</p>")
+    sb = d.get("station_bias", {"stations": [], "n_events": 0})
+    if sb["stations"]:
+        brows = "\n".join(
+            f"<tr><td>{s['city']}</td><td>{s['n']}</td>"
+            f"<td>{s['mean_delta']:+g}</td><td>{s['max_delta']:+g}</td>"
+            f"<td>{s['unit'][:1].upper()}</td>"
+            f"<td>{s['suggested_margin'] if s['suggested_margin'] else '—'}</td></tr>"
+            for s in sb["stations"])
+        bias_html = (
+            "<h2 style='font-size:1rem;margin:1.4rem 0 .3rem'>METAR vs settlement "
+            "— how many degrees high we read</h2>"
+            "<p class='note'>Δ = our peak observed max − the top of the bucket that "
+            "actually settled. Positive = we read <b>above</b> the published high, "
+            "which false-DEAD-locks buckets the max really landed in (every miss so "
+            "far). Suggested margin exceeds the worst overshoot — the empirical "
+            "replacement for the guessed ±1°F/0.5°C.</p>"
+            "<table><tr><th>City</th><th>Events</th><th>Mean Δ</th><th>Max Δ</th>"
+            "<th>Unit</th><th>Suggested margin</th></tr>"
+            f"{brows}</table>")
+    else:
+        bias_html = ("<p class='note'><i>METAR-vs-settlement reconciliation: no "
+                     "settled events reconciled yet.</i></p>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>Contest Edge — Weather Near-Resolution Triggers</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -427,6 +449,7 @@ book (what survives slippage), vs the whole-book notional.</p>
 <table><tr><th>City</th><th>Locks</th><th>Mkt led</th><th>Median lag</th>
 <th>Resolved</th><th>Median $ fillable</th><th>Real $200</th></tr>
 {rows}</table>
+{bias_html}
 <p class="note"><a href="/">ledger</a> · <a href="/lanes">lanes</a> ·
 raw: <a href="/api/triggers">/api/triggers</a></p>
 </body></html>"""

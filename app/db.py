@@ -199,6 +199,21 @@ trigger_grades = Table(                                # APPEND-ONLY, one per bu
 )
 
 
+trigger_reconciliations = Table(                       # APPEND-ONLY, one per event
+    "trigger_reconciliations", metadata,               # our peak METAR read vs the
+    Column("id", Integer, primary_key=True, autoincrement=True),  # bucket that
+    Column("event_slug", Text, nullable=False, unique=True),  # actually settled —
+    Column("city", Text),                              # the empirical margin.
+    Column("icao", Text),
+    Column("unit", Text),                              # celsius | fahrenheit
+    Column("our_obs_max", Float),                      # peak we read at lock
+    Column("won_lo", Float),                           # settled bucket bounds =
+    Column("won_hi", Float),                           # Wunderground published high
+    Column("delta_deg", Float),                        # obs_max - won_hi (+ = high)
+    Column("reconciled_at", Text, nullable=False),     # UTC ISO
+)
+
+
 def get_engine():
     return create_engine(DB_URL)
 
