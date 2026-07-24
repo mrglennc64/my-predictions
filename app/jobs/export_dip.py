@@ -129,32 +129,41 @@ def _lane_pair_rows():
                    "source": "contest-edge"}
 
 
-def _weather_trigger_rows(conn):
-    """Resolved weather-trigger locks as DIP history — refereed by LOCK accuracy
-    at the price actually paid, NOT the OpenMeteo forecast bucket hit-rate that
-    domain 'weather' already carries. p = best_ask at lock (cost of the certain-
-    side token, so DIP's breakeven reflects real cost); hit = lock_correct. Only
-    locks that had a book are tradeable, so priceless locks are dropped."""
-    tg, te = db.trigger_grades, db.trigger_events
-    ask = {}
-    for r in conn.execute(select(te.c.mslug, te.c.best_ask)
-                          .where(te.c.kind == "LOCK")):
-        if r.best_ask is not None:
-            ask.setdefault(r.mslug, r.best_ask)
-    for r in conn.execute(select(tg)):
-        price = ask.get(r.mslug)
-        if price is None:
-            continue                        # no book -> never tradeable, skip
+def _weather_trigger_live_rows(conn):
+    """Open weather-trigger locks as LIVE DIP predictions, so DIP referees the
+    trigger on its OWN ledger (/decision reads results⋈predictions, never the
+    pushed history). Distinct market 'temp_lock', NOT the OpenMeteo forecast
+    'temp_bucket'. Encoding makes DIP's own math land on lock accuracy at the
+    price paid:
+      PROVEN (bet the "or above" bucket YES): side=over, prob_over=best_ask
+      DEAD   (bet the bucket NO):             side=under, prob_over=1-best_ask
+    DIP grades the bucket YES/NO from Polymarket settlement (_pushed_result by
+    entity label), then /decision computes hit = up if over else not up = whether
+    the LOCKed side won, and p = prob_over if over else 1-prob_over = best_ask.
+    event_key is the EVENT slug so DIP finds the bucket among the event's markets.
+    Only booked, still-open locks — resolved ones enter via DIP's settlement."""
+    from src.weather_trigger.revision import event_slug_of
+    te, tg = db.trigger_events, db.trigger_grades
+    resolved = {r[0] for r in conn.execute(select(tg.c.mslug))}
+    first_lock = {}
+    for r in conn.execute(select(te.c.mslug, te.c.city, te.c.side, te.c.state,
+                                 te.c.best_ask)
+                          .where(te.c.kind == "LOCK").order_by(te.c.id)):
+        if r.mslug not in resolved and r.best_ask is not None:
+            first_lock.setdefault(r.mslug, r)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for mslug, r in first_lock.items():
+        es = event_slug_of(mslug)
+        if not es:
+            continue
+        proven = r.state == "PROVEN"
         yield {
-            "entity": f"{r.city} {r.side}",
-            "gameid": r.mslug,
-            "market": "temp_lock",
-            "date": (r.locked_at or r.graded_at)[:10],
-            "line": 0.5,
-            "modelp": round(float(price), 3),
-            "version": "trigger_v1",
-            "domain": "weather_trigger",
-            "actual": r.lock_correct,
+            "entity": r.side, "gameid": es, "market": "temp_lock",
+            "date": today, "line": 0.5,
+            "modelp": round(r.best_ask if proven else 1.0 - r.best_ask, 3),
+            "version": "trigger_v1", "domain": "weather_trigger",
+            "source": "contest-edge", "side": "over" if proven else "under",
+            "actual": "",
         }
 
 
@@ -166,12 +175,12 @@ def main():
         for row in list(_mlb_rows(conn)) + list(_crypto_rows(conn)):
             if row["actual"] != "":
                 graded.append(row)          # ALL graded history feeds evidence
-        graded.extend(_weather_trigger_rows(conn))   # trigger's own scorecard
             # owner + DIP-spec call: neither baseball nor pending crypto on
             # the live board (crypto windows are structural coin flips with
             # fees; DIP ingests Polymarket crypto itself now). Both lanes
-    # keep grading in their own ledgers.
-    live = list(_tennis_rows()) + list(_lane_pair_rows())
+            # keep grading in their own ledgers.
+        trigger_live = list(_weather_trigger_live_rows(conn))
+    live = list(_tennis_rows()) + list(_lane_pair_rows()) + trigger_live
 
     for name, rows in (("dip_live.csv", live), ("dip_graded.csv", graded)):
         path = os.path.join(EXPORT_DIR, name)
@@ -193,7 +202,8 @@ def _push_to_dip(live: list[dict], graded: list[dict]):
             "player": r["entity"], "sport": r["domain"], "market": r["market"],
             "line": float(r["line"]), "probabilityOver": float(r["modelp"]),
             "event_key": r["gameid"], "timestamp": r["date"],
-            "source": r.get("source", "contest-edge"), "side": "over",
+            "source": r.get("source", "contest-edge"),
+            "side": r.get("side", "over"),
         } for r in live],
         "history": [{
             "p": float(r["modelp"]), "hit": int(r["actual"]),
