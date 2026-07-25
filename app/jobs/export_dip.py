@@ -29,6 +29,25 @@ EXPORT_DIR = os.path.join(os.path.dirname(os.path.dirname(
 FIELDS = ["entity", "gameid", "market", "date", "line", "modelp",
           "version", "domain", "actual"]
 
+# The event slug ends in -on-<month>-<day>-<year>; the real event date (not the
+# push date) is what DIP groups on to down-weight same-city, same-day locks as
+# the correlated cluster they are, so it is parsed out and supplied explicitly.
+_EVENT_DATE = re.compile(r"-on-([a-z]+)-(\d{1,2})-(\d{4})$")
+_MONTHS = {m: i for i, m in enumerate(
+    ["january", "february", "march", "april", "may", "june", "july", "august",
+     "september", "october", "november", "december"], start=1)}
+
+
+def _event_date_of(event_slug):
+    """'…-on-july-25-2026' -> '2026-07-25', or None if the slug doesn't parse."""
+    m = _EVENT_DATE.search(event_slug or "")
+    if not m:
+        return None
+    mon = _MONTHS.get(m.group(1))
+    if not mon:
+        return None
+    return f"{int(m.group(3)):04d}-{mon:02d}-{int(m.group(2)):02d}"
+
 
 def _mlb_rows(conn):
     rows = conn.execute(
@@ -141,22 +160,58 @@ def _weather_trigger_live_rows(conn):
     entity label), then /decision computes hit = up if over else not up = whether
     the LOCKed side won, and p = prob_over if over else 1-prob_over = best_ask.
     event_key is the EVENT slug so DIP finds the bucket among the event's markets.
-    Only booked, still-open locks — resolved ones enter via DIP's settlement."""
-    from src.weather_trigger.revision import event_slug_of
+    Only booked, still-open locks — resolved ones enter via DIP's settlement.
+
+    Each row also carries the trigger's own tradeability + reliability signals as
+    SUPPLIED attributes (DIP consumes, never recomputes — it has no METAR feed):
+    lag to first market concede, edge-dollars, realistic $200 fill, AT_RISK
+    thinness, and the per-city METAR-vs-settlement reconciliation delta. These
+    feed DIP's tradeable light and correlated-sample down-weighting; they never
+    touch the outcome, which stays Polymarket-sourced."""
+    from src.weather_trigger.revision import event_slug_of, station_bias
+    from src.weather_trigger import digest
     te, tg = db.trigger_events, db.trigger_grades
     resolved = {r[0] for r in conn.execute(select(tg.c.mslug))}
-    first_lock = {}
-    for r in conn.execute(select(te.c.mslug, te.c.city, te.c.side, te.c.state,
-                                 te.c.best_ask)
-                          .where(te.c.kind == "LOCK").order_by(te.c.id)):
-        if r.mslug not in resolved and r.best_ask is not None:
-            first_lock.setdefault(r.mslug, r)
+
+    # Group by bucket slug: keep the FIRST lock's fields + every concede stamp,
+    # so per-lock lag (lock -> first concede at/after it) is measurable — the
+    # same shape digest.compute() uses, reusing its helpers to avoid drift.
+    by_slug: dict[str, dict] = {}
+    for r in conn.execute(
+            select(te.c.mslug, te.c.city, te.c.side, te.c.state, te.c.best_ask,
+                   te.c.edge_dollars, te.c.depth_json, te.c.obs_max,
+                   te.c.boundary, te.c.unit, te.c.kind, te.c.snapshot_at)
+            .order_by(te.c.id)):
+        d = by_slug.setdefault(r.mslug, {"concedes": []})
+        if r.kind == "LOCK" and "lock" not in d:
+            d["lock"], d["locked_at"] = r, r.snapshot_at
+        elif r.kind == "CONCEDE":
+            d["concedes"].append(r.snapshot_at)
+
+    bias = {b["city"]: b for b in station_bias().get("stations", [])}
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    for mslug, r in first_lock.items():
+
+    for mslug, d in by_slug.items():
+        if mslug in resolved or "lock" not in d:
+            continue
+        r = d["lock"]
+        if r.best_ask is None:
+            continue
         es = event_slug_of(mslug)
         if not es:
             continue
         proven = r.state == "PROVEN"
+
+        lag_s = None
+        try:
+            t0 = digest._iso(d["locked_at"])
+            post = [digest._iso(t) for t in d["concedes"] if digest._iso(t) >= t0]
+            if post:
+                lag_s = int((min(post) - t0).total_seconds())
+        except (ValueError, TypeError):
+            lag_s = None
+
+        b = bias.get(r.city, {})
         yield {
             "entity": r.side, "gameid": es, "market": "temp_lock",
             "date": today, "line": 0.5,
@@ -164,6 +219,17 @@ def _weather_trigger_live_rows(conn):
             "version": "trigger_v1", "domain": "weather_trigger",
             "source": "contest-edge", "side": "over" if proven else "under",
             "actual": "",
+            # supplied tradeability + reliability attributes (Phase 0)
+            "city": r.city,
+            "event_date": _event_date_of(es) or today,
+            "lag_s": lag_s,
+            "edge_dollars": (round(r.edge_dollars, 2)
+                             if r.edge_dollars is not None else None),
+            "fill_200": digest._fill_profit(r.depth_json),
+            "at_risk": int(digest._at_risk(r.obs_max, r.boundary, r.unit)),
+            "recon_delta_mean": b.get("mean_delta"),
+            "recon_delta_max": b.get("max_delta"),
+            "recon_n": b.get("n"),
         }
 
 
@@ -204,6 +270,12 @@ def _push_to_dip(live: list[dict], graded: list[dict]):
             "event_key": r["gameid"], "timestamp": r["date"],
             "source": r.get("source", "contest-edge"),
             "side": r.get("side", "over"),
+            # Weather-trigger rows carry extra tradeability/reliability attrs;
+            # other lanes don't, so only pass keys that are actually present.
+            **{k: r[k] for k in (
+                "city", "event_date", "lag_s", "edge_dollars", "fill_200",
+                "at_risk", "recon_delta_mean", "recon_delta_max", "recon_n")
+                if k in r},
         } for r in live],
         "history": [{
             "p": float(r["modelp"]), "hit": int(r["actual"]),
