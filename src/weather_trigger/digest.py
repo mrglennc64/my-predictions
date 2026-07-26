@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 
 from app import db
+from src.weather_trigger import quality
 
 STAKE = 200.0   # the paper order we actually simulate against the book
 
@@ -82,6 +83,8 @@ def compute():
                 d["edge_dollars"] = r.edge_dollars
                 d["depth_json"] = r.depth_json
                 d["at_risk"] = _at_risk(r.obs_max, r.boundary, r.unit)
+                d["quality"] = quality.classify(
+                    r.state, r.market_p, r.obs_max, r.boundary, r.unit, r.icao)
         if r.kind == "CONCEDE":
             d["concedes"].append(r.snapshot_at)
 
@@ -90,13 +93,19 @@ def compute():
     for slug, d in by_slug.items():
         c = cities.setdefault(d["city"], {"locks": 0, "lags": [], "edges": [],
                                           "market_led": 0, "fills": [],
-                                          "at_risk": 0, "solid_fills": []})
+                                          "at_risk": 0, "solid_fills": [],
+                                          "q_avoid": 0, "q_caution": 0,
+                                          "q_preferred": 0})
         if "locked_at" not in d:
             continue
         c["locks"] += 1
         at_risk = d.get("at_risk", False)
         if at_risk:
             c["at_risk"] += 1
+        q = d.get("quality")
+        if q:
+            c[{"AVOID": "q_avoid", "CAUTION": "q_caution",
+               "PREFERRED": "q_preferred"}[q["tier"]]] += 1
         if d.get("edge_dollars") is not None:
             c["edges"].append(d["edge_dollars"])
         fill = _fill_profit(d.get("depth_json"))
@@ -153,6 +162,8 @@ def compute():
             "median_edge_dollars": med_edge,
             "realistic_fill_200": med_fill,
             "resolved": res_n, "resolved_correct": (res_ok or 0),
+            "q_avoid": c["q_avoid"], "q_caution": c["q_caution"],
+            "q_preferred": c["q_preferred"],
             "verdict": verdict})
 
     days = ((span_end - span_start).total_seconds() / 86400
@@ -179,6 +190,17 @@ def compute():
                 + (f" ({accuracy:.0%})" if resolved else "")
                 + f" — gate {'OPEN' if gate_open else 'CLOSED'}: real money only "
                 f"after ≥{GATE_MIN} resolved at 100%.")
+    # Lock-quality split: how much of the apparent edge is actually tradeable
+    # vs. a trap. AVOID = adverse-priced or thin-data (the Shenzhen pattern);
+    # PREFERRED = US station, priced in the survivable band. This deflates the
+    # headline "$ fillable" honestly — much of it sits on AVOID locks.
+    q_avoid = sum(c["q_avoid"] for c in cities.values())
+    q_caution = sum(c["q_caution"] for c in cities.values())
+    q_preferred = sum(c["q_preferred"] for c in cities.values())
+    quality_line = (f"lock quality: {q_preferred} preferred / {q_caution} caution"
+                    f" / {q_avoid} avoid (adverse-priced or thin-data) — only "
+                    f"preferred locks are clean manual candidates.")
+
     return {
         "cities": out_cities,
         "observed_days": round(days, 3),
@@ -186,6 +208,8 @@ def compute():
         "total_realistic_fill_200": round(total_fill, 2),
         "total_solid_fill_200": round(total_solid_fill, 2),
         "at_risk_locks": sum(c["at_risk"] for c in cities.values()),
+        "quality_preferred": q_preferred, "quality_caution": q_caution,
+        "quality_avoid": q_avoid, "quality_verdict": quality_line,
         "est_dollars_per_week_upper_bound": (round(per_week, 2)
                                              if per_week is not None else None),
         "resolved": resolved, "resolved_correct": correct,
@@ -214,6 +238,7 @@ def print_digest():
     if not d["cities"]:
         print("  (no locks logged yet)")
     print("  " + d["resolution_verdict"])
+    print("  " + d["quality_verdict"])
     for s in d.get("station_bias", {}).get("stations", []):
         if s["max_delta"] > 0:
             print(f"  bias {s['city']}: max {s['max_delta']:+}{s['unit'][:1].upper()}"

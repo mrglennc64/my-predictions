@@ -6,7 +6,7 @@ max-group parsing, and boundary/margin lock logic (+ edge-dollars, rules).
 import math
 from datetime import datetime, timezone
 
-from src.weather_trigger import clob, localtime, lock, metar, rules
+from src.weather_trigger import clob, localtime, lock, metar, quality, rules
 
 
 def test_lock_margin():
@@ -86,6 +86,34 @@ def test_edge_dollars():
     assert len(walked) == 2                    # 0.999 level is >= fair, skipped
     bb, ba = clob.best_bid_ask(book)
     assert bb == 0.10 and ba == 0.60
+
+
+def test_lock_quality():
+    # PROVEN at KDAL priced 0.88 -> in band, US station -> PREFERRED
+    q = quality.classify("PROVEN", 0.88, obs_max=96, boundary=94.5,
+                         unit="fahrenheit", icao="KDAL")
+    assert q["tier"] == "PREFERRED" and q["sure_p"] == 0.88
+    assert not q["adverse"] and not q["low_data"]
+    # PROVEN priced 0.55 -> market disagrees hard -> adverse -> AVOID
+    a = quality.classify("PROVEN", 0.55, icao="KSEA")
+    assert a["adverse"] and a["tier"] == "AVOID"
+    # DEAD at KDAL: sure side is NO, so sure_p = 1 - 0.10 = 0.90 -> PREFERRED
+    dead = quality.classify("DEAD", 0.10, icao="KDAL")
+    assert dead["sure_p"] == 0.90 and dead["tier"] == "PREFERRED"
+    # DEAD priced 0.60 -> NO side implied 0.40 -> adverse -> AVOID
+    dbad = quality.classify("DEAD", 0.60, icao="KHOU")
+    assert dbad["adverse"] and dbad["tier"] == "AVOID"
+    # International station (Shenzhen ZGSZ), well-priced -> thin data flags but is
+    # NOT a hard avoid (intl °C stations reconcile clean); lowered to CAUTION.
+    intl = quality.classify("PROVEN", 0.90, icao="ZGSZ")
+    assert intl["low_data"] and intl["tier"] == "CAUTION"
+    # International AND adverse-priced (the actual Shenzhen miss) -> still AVOID.
+    intl_bad = quality.classify("PROVEN", 0.36, icao="ZGSZ")
+    assert intl_bad["adverse"] and intl_bad["tier"] == "AVOID"
+    # Near-conceded high price -> flagged, downside ratio large
+    hi = quality.classify("PROVEN", 0.97, icao="KDAL")
+    assert hi["near_conceded"] and hi["tier"] == "CAUTION"
+    assert hi["downside_ratio"] > 30   # 0.97/0.03 ~ 32x loss-to-win if wrong
 
 
 def test_rules_parse():
