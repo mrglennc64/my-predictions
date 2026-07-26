@@ -229,6 +229,22 @@ station_health = Table(                                 # APPEND-ONLY, one row p
 )
 
 
+depth_reality = Table(                                  # APPEND-ONLY, one per lock
+    "depth_reality", metadata,                         # — did the below-fair depth
+    Column("id", Integer, primary_key=True, autoincrement=True),  # we SAW at lock
+    Column("mslug", Text, nullable=False, unique=True),  # actually TRADE before it
+    Column("city", Text),                              # conceded, or vanish unfilled
+    Column("event_slug", Text),                        # (spoof-and-withdraw)?
+    Column("state", Text),                             # PROVEN | DEAD
+    Column("displayed_shares", Float),                 # below-fair asks at lock
+    Column("traded_shares", Float),                    # below-fair BUYs that printed
+    Column("phantom_ratio", Float),                    # 1 - traded/displayed (LOWER
+    Column("lock_at", Text),                           #  bound on phantom-ness)
+    Column("concede_at", Text),
+    Column("computed_at", Text, nullable=False),
+)
+
+
 def get_engine():
     return create_engine(DB_URL)
 

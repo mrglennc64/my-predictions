@@ -229,8 +229,19 @@ def compute():
         "gate_open": gate_open, "resolution_verdict": res_line,
         "station_bias": _station_bias(),
         "station_health": _station_health(),
+        "depth_reality": _depth_reality(),
         "global_verdict": verdict,
     }
+
+
+def _depth_reality():
+    # Phantom-liquidity verdict: did displayed below-fair depth actually trade?
+    # Read-only; None until the depth_reality job has reconstructed a lock.
+    try:
+        from app.jobs import depth_reality
+        return depth_reality.latest_summary()
+    except Exception:
+        return None
 
 
 def _station_health():

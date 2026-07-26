@@ -8,12 +8,37 @@ is vanity: a 40c mispricing on $12 of depth is a toy, and only dollars say so.
 import requests
 
 BOOK_URL = "https://clob.polymarket.com/book"
+TRADES_URL = "https://data-api.polymarket.com/trades"
 
 
 def fetch_book(token_id: str) -> dict:
     r = requests.get(BOOK_URL, params={"token_id": token_id}, timeout=30)
     r.raise_for_status()
     return r.json()
+
+
+def fetch_trades(condition_id: str, since_ts: int | None = None,
+                 page: int = 500, max_pages: int = 12) -> list[dict]:
+    """Executed trades for a market (by conditionId), newest-first. Pages back
+    with offset until it passes `since_ts` (or runs out). Each trade carries
+    outcome / side / price / size / timestamp — enough to tell whether displayed
+    below-fair depth actually TRADED (real) or vanished unfilled (spoofed).
+
+    Filtering by conditionId is deliberate: the `asset` param does not reliably
+    scope to one token, but `market`=conditionId does."""
+    out = []
+    for i in range(max_pages):
+        r = requests.get(TRADES_URL, params={"market": condition_id,
+                                             "limit": page, "offset": i * page},
+                         timeout=30)
+        r.raise_for_status()
+        batch = r.json()
+        if not isinstance(batch, list) or not batch:
+            break
+        out.extend(batch)
+        if since_ts is not None and batch[-1].get("timestamp", 0) < since_ts:
+            break
+    return out
 
 
 def _levels(raw) -> list[tuple[float, float]]:

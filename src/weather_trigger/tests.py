@@ -163,6 +163,18 @@ def test_iem_fallback_parse():
     # ICAO -> IEM id mapping: strip K for CONUS, pass through non-US
     assert metar._iem_station("KDAL") == "DAL"
     assert metar._iem_station("ZGSZ") == "ZGSZ"
+
+
+def test_phantom_ratio():
+    from app.jobs.depth_reality import phantom_ratio
+    # displayed 100 shares, all 100 traded -> real, 0% phantom
+    assert phantom_ratio(100, 100) == 0.0
+    # displayed 100, only 10 traded -> 90% phantom (depth pulled)
+    assert phantom_ratio(100, 10) == 0.9
+    # more traded than the single displayed snapshot -> clamp to 0 (real)
+    assert phantom_ratio(100, 250) == 0.0
+    # no displayed depth -> nothing to judge
+    assert phantom_ratio(0, 0) is None
     # Near-conceded high price -> flagged, downside ratio large
     hi = quality.classify("PROVEN", 0.97, icao="KDAL")
     assert hi["near_conceded"] and hi["tier"] == "CAUTION"
