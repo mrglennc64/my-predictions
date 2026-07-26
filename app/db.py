@@ -214,6 +214,21 @@ trigger_reconciliations = Table(                       # APPEND-ONLY, one per ev
 )
 
 
+station_health = Table(                                 # APPEND-ONLY, one row per
+    "station_health", metadata,                        # station per probe run —
+    Column("id", Integer, primary_key=True, autoincrement=True),  # tracks whether
+    Column("run_at", Text, nullable=False),            # our settlement instrument
+    Column("icao", Text, nullable=False),              # (US ASOS/METAR) is degrading
+    Column("city", Text),                              # under NOAA/NWS budget cuts:
+    Column("is_us", Integer),                          # outages, missing obs, dropped
+    Column("n_obs_6h", Integer),                       # 6hr-max groups, stale reads.
+    Column("staleness_min", Float),                    # mins since latest ob (None=none)
+    Column("has_6hr_max", Integer),                    # 1sTTT group seen (US signal)
+    Column("ok", Integer),                             # fetch returned usable data
+    Column("checked_at", Text, nullable=False),
+)
+
+
 def get_engine():
     return create_engine(DB_URL)
 

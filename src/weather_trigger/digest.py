@@ -228,8 +228,19 @@ def compute():
         "lock_accuracy": accuracy, "gate_min_resolved": GATE_MIN,
         "gate_open": gate_open, "resolution_verdict": res_line,
         "station_bias": _station_bias(),
+        "station_health": _station_health(),
         "global_verdict": verdict,
     }
+
+
+def _station_health():
+    # Latest settlement-instrument health probe (US ASOS/METAR degradation watch).
+    # Read-only; None until the monitor job has run at least once.
+    try:
+        from app.jobs import monitor_stations
+        return monitor_stations.latest_summary()
+    except Exception:
+        return None
 
 
 def _station_bias():

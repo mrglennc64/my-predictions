@@ -127,6 +127,23 @@ def test_lock_quality():
     fallback = quality.classify("PROVEN", 0.88, unit="celsius", icao="ZGSZ",
                                 station_bias_mean=-0.4, station_bias_n=1)
     assert fallback["reliability_basis"] == "proxy" and fallback["low_data"]
+
+
+def test_station_health_metrics():
+    from app.jobs import monitor_stations as mon
+    now = 1_800_000_000
+    # A healthy US station: fresh obs, 6hr-max group present.
+    obs = [{"obsTime": now - 300, "temp": 30, "rawOb": "KDAL ... RMK 10280 20150"},
+           {"obsTime": now - 3900, "temp": 29, "rawOb": "KDAL ..."}]
+    h = mon.station_metrics(obs, now)
+    assert h["ok"] == 1 and h["n_obs_6h"] == 2 and h["has_6hr_max"] == 1
+    assert h["staleness_min"] == 5.0
+    # A degraded station: no obs at all (outage) — the failure mode to catch.
+    d = mon.station_metrics([], now)
+    assert d["ok"] == 0 and d["n_obs_6h"] == 0 and d["staleness_min"] is None
+    # International-style: fresh obs but no 6hr-max group (legitimately absent).
+    i = mon.station_metrics([{"obsTime": now - 600, "temp": 22, "rawOb": "ZGSZ 22/21"}], now)
+    assert i["ok"] == 1 and i["has_6hr_max"] == 0 and i["staleness_min"] == 10.0
     # Near-conceded high price -> flagged, downside ratio large
     hi = quality.classify("PROVEN", 0.97, icao="KDAL")
     assert hi["near_conceded"] and hi["tier"] == "CAUTION"
