@@ -144,6 +144,25 @@ def test_station_health_metrics():
     # International-style: fresh obs but no 6hr-max group (legitimately absent).
     i = mon.station_metrics([{"obsTime": now - 600, "temp": 22, "rawOb": "ZGSZ 22/21"}], now)
     assert i["ok"] == 1 and i["has_6hr_max"] == 0 and i["staleness_min"] == 10.0
+
+
+def test_iem_fallback_parse():
+    csv_text = (
+        "station,valid,metar\n"
+        "DAL,2026-07-25 17:53,KDAL 251753Z 24008KT 10SM CLR 35/19 A3004 RMK AO2 SLP165 10339 T03500194\n"
+        "DAL,2026-07-25 18:00,KDAL 251800Z AUTO 16007KT 10SM CLR 34/20 A2995 RMK T03400200\n"
+    )
+    obs = metar._parse_iem_csv(csv_text)
+    assert len(obs) == 2
+    assert obs[0]["rawOb"].startswith("KDAL 251753Z")
+    assert obs[0]["temp"] == 35.0                 # RMK T-group 0350 -> +35.0
+    assert obs[1]["temp"] == 34.0
+    assert obs[1]["obsTime"] > obs[0]["obsTime"]  # chronological, real epochs
+    # the 6hr-max group (10339 -> 33.9C) survives for the existing parser
+    assert metar.parse_6hr_max_c(obs[0]["rawOb"]) == 33.9
+    # ICAO -> IEM id mapping: strip K for CONUS, pass through non-US
+    assert metar._iem_station("KDAL") == "DAL"
+    assert metar._iem_station("ZGSZ") == "ZGSZ"
     # Near-conceded high price -> flagged, downside ratio large
     hi = quality.classify("PROVEN", 0.97, icao="KDAL")
     assert hi["near_conceded"] and hi["tier"] == "CAUTION"

@@ -8,11 +8,19 @@ stations (e.g. ZBAA: "METAR ZBAA 221530Z ... 22/21 Q1004 NOSIG") do not, so
 body-temp max is the only signal there. That's why the running max, not a
 single reading, is what tracks Wunderground's daily high.
 """
+import csv
+import io
 import re
+import sys
+from datetime import datetime, timedelta, timezone
 
 import requests
 
 METAR_URL = "https://aviationweather.gov/api/data/metar"
+# Independent fallback: Iowa Environmental Mesonet (Iowa State) mirrors the same
+# ASOS raw METARs — including the RMK 6hr-max group (verified) — on separate
+# infrastructure, so a NOAA/aviationweather API outage doesn't blind the watcher.
+IEM_URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
 
 # 6-hourly maximum temperature group in RMK: 1 s TTT  (s: 0=+,1=-; TTT tenths °C)
 _MAX6 = re.compile(r"(?<!\d)1([01])(\d{3})(?!\d)")
@@ -57,12 +65,89 @@ def observed_max_c(obs: list[dict], since_epoch: int) -> float | None:
     return max(temps) if temps else None
 
 
-def fetch_metars(icao: str, hours: int = 30) -> list[dict]:
+def _fetch_awc(icao: str, hours: int = 30) -> list[dict]:
+    """Primary source: aviationweather.gov JSON (global, incl. non-US stations)."""
     r = requests.get(METAR_URL, params={"ids": icao, "format": "json",
                                         "hours": hours}, timeout=30)
     r.raise_for_status()
     data = r.json()
     return data if isinstance(data, list) else []
+
+
+def _iem_station(icao: str) -> str:
+    """AWC keys on ICAO (KDAL); IEM's ASOS network keys on the local id (DAL for
+    CONUS K-stations). Non-K ICAOs pass through (IEM's US coverage is the point —
+    international fallback is best-effort)."""
+    icao = (icao or "").strip().upper()
+    return icao[1:] if len(icao) == 4 and icao.startswith("K") else icao
+
+
+def _temp_from_metar(raw: str | None) -> float | None:
+    """°C from a raw METAR: prefer the precise RMK T-group, else the body TT/DD."""
+    if raw and "RMK" in raw:
+        m = re.search(r"\bT([01]\d{3})[01]\d{3}\b", raw.split("RMK", 1)[1])
+        if m:
+            v = int(m.group(1)[1:]) / 10.0
+            return -v if m.group(1)[0] == "1" else v
+    m = re.search(r"\b(M?\d{2})/(M?\d{2})\b", raw or "")
+    if m:
+        t = m.group(1)
+        return float(-int(t[1:]) if t.startswith("M") else int(t))
+    return None
+
+
+def _parse_iem_csv(text: str) -> list[dict]:
+    """Pure: IEM 'station,valid,metar' CSV -> AWC-shaped obs dicts
+    ({obsTime epoch, temp °C, rawOb}). Temp is decoded from the raw METAR so we
+    don't depend on IEM's optional numeric columns."""
+    out = []
+    for r in csv.DictReader(io.StringIO(text)):
+        raw = (r.get("metar") or "").strip()
+        valid = r.get("valid")
+        if not raw or not valid:
+            continue
+        try:
+            ep = int(datetime.strptime(valid, "%Y-%m-%d %H:%M")
+                     .replace(tzinfo=timezone.utc).timestamp())
+        except (ValueError, TypeError):
+            continue
+        out.append({"obsTime": ep, "temp": _temp_from_metar(raw), "rawOb": raw})
+    return out
+
+
+def fetch_metars_iem(icao: str, hours: int = 30) -> list[dict]:
+    """Fallback fetch from IEM, normalized to the AWC obs shape."""
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(hours=hours)
+    r = requests.get(IEM_URL, params={
+        "station": _iem_station(icao), "data": "metar",
+        "sts": start.strftime("%Y-%m-%dT%H:%MZ"),
+        "ets": end.strftime("%Y-%m-%dT%H:%MZ"),
+        "tz": "UTC", "format": "onlycomma", "latlon": "no",
+        "missing": "M", "trace": "T"}, timeout=40)
+    r.raise_for_status()
+    return _parse_iem_csv(r.text)
+
+
+def fetch_metars(icao: str, hours: int = 30) -> list[dict]:
+    """Observed METARs, resilient to a primary-source outage. Tries
+    aviationweather.gov first (unchanged behavior when it works); only on error
+    or an empty result does it fall back to IEM. Same obs shape either way, so
+    lock detection is agnostic to which source answered."""
+    try:
+        data = _fetch_awc(icao, hours)
+        if data:
+            return data
+        print(f"[metar] aviationweather empty for {icao}; trying IEM", file=sys.stderr)
+    except Exception as e:
+        print(f"[metar] aviationweather failed for {icao}: {type(e).__name__}: {e}"
+              f"; trying IEM", file=sys.stderr)
+    try:
+        return fetch_metars_iem(icao, hours)
+    except Exception as e:
+        print(f"[metar] IEM fallback failed for {icao}: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return []
 
 
 def to_unit(c: float, unit: str) -> float:
