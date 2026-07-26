@@ -71,6 +71,15 @@ def compute():
     with db.get_engine().connect() as conn:
         rows = conn.execute(select(db.trigger_events)
                             .order_by(db.trigger_events.c.id)).fetchall()
+    # Per-station settlement bias from POST-FIX reconciliations only. Earlier
+    # deltas carry the now-fixed 6hr-max bug and would smear a global code error
+    # onto individual stations; the cutoff excludes that morning batch. Feeds the
+    # quality gate — stations without enough clean history fall back to the proxy.
+    from src.weather_trigger import revision
+    STATION_BIAS_SINCE = "2026-07-24T12:00:00"
+    bias_map = {b["city"]: b for b in
+                revision.station_bias(since=STATION_BIAS_SINCE).get("stations", [])}
+
     # mslug is per-bucket (…-on-2026-07-23-90-91f), so grouping by mslug groups
     # by bucket. Keep the FIRST lock and ALL concede timestamps — the lag is
     # only meaningful against a concede that lands at/after the lock.
@@ -83,8 +92,11 @@ def compute():
                 d["edge_dollars"] = r.edge_dollars
                 d["depth_json"] = r.depth_json
                 d["at_risk"] = _at_risk(r.obs_max, r.boundary, r.unit)
+                _sb = bias_map.get(r.city, {})
                 d["quality"] = quality.classify(
-                    r.state, r.market_p, r.obs_max, r.boundary, r.unit, r.icao)
+                    r.state, r.market_p, r.obs_max, r.boundary, r.unit, r.icao,
+                    station_bias_mean=_sb.get("mean_delta"),
+                    station_bias_n=_sb.get("n", 0))
         if r.kind == "CONCEDE":
             d["concedes"].append(r.snapshot_at)
 

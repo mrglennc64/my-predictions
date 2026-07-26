@@ -107,13 +107,19 @@ def reconcile_pending(engine) -> list[dict]:
     return written
 
 
-def station_bias() -> dict:
+def station_bias(since=None) -> dict:
     """Per-city METAR-vs-settlement summary for the digest/page. suggested_margin
-    is the worst overshoot rounded up — a margin above it stops the misses."""
+    is the worst overshoot rounded up — a margin above it stops the misses.
+
+    `since` (ISO timestamp) filters to reconciliations at/after it — used to feed
+    the quality gate ONLY post-fix settlements, so a since-fixed global code bug
+    isn't attributed to individual stations. Omit it for the all-time view."""
     tr = db.trigger_reconciliations
+    q = select(tr.c.city, tr.c.unit, tr.c.delta_deg).where(tr.c.delta_deg.isnot(None))
+    if since:
+        q = q.where(tr.c.reconciled_at >= since)
     with db.get_engine().connect() as conn:
-        rows = conn.execute(select(tr.c.city, tr.c.unit, tr.c.delta_deg)
-                            .where(tr.c.delta_deg.isnot(None))).fetchall()
+        rows = conn.execute(q).fetchall()
     by_city: dict[str, dict] = {}
     for r in rows:
         c = by_city.setdefault(r.city, {"unit": r.unit, "deltas": []})

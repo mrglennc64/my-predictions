@@ -110,6 +110,23 @@ def test_lock_quality():
     # International AND adverse-priced (the actual Shenzhen miss) -> still AVOID.
     intl_bad = quality.classify("PROVEN", 0.36, icao="ZGSZ")
     assert intl_bad["adverse"] and intl_bad["tier"] == "AVOID"
+
+    # --- station-bias gate (measured reliability beats nationality) ---
+    # A clean, well-reconciled INTERNATIONAL station can reach PREFERRED.
+    clean_intl = quality.classify("PROVEN", 0.88, unit="celsius", icao="ZGSZ",
+                                  station_bias_mean=-0.4, station_bias_n=5)
+    assert clean_intl["reliability_basis"] == "station"
+    assert not clean_intl["low_data"] and clean_intl["tier"] == "PREFERRED"
+    # A well-reconciled but BIASED US station is demoted out of PREFERRED
+    # (+5°F ≈ +2.8°C-equiv, over the 1.0 threshold).
+    biased_us = quality.classify("PROVEN", 0.88, unit="fahrenheit", icao="KSEA",
+                                 station_bias_mean=5.0, station_bias_n=5)
+    assert biased_us["reliability_basis"] == "station" and biased_us["low_data"]
+    assert biased_us["tier"] == "CAUTION"
+    # Too few post-fix reconciliations -> fall back to the nationality proxy.
+    fallback = quality.classify("PROVEN", 0.88, unit="celsius", icao="ZGSZ",
+                                station_bias_mean=-0.4, station_bias_n=1)
+    assert fallback["reliability_basis"] == "proxy" and fallback["low_data"]
     # Near-conceded high price -> flagged, downside ratio large
     hi = quality.classify("PROVEN", 0.97, icao="KDAL")
     assert hi["near_conceded"] and hi["tier"] == "CAUTION"
