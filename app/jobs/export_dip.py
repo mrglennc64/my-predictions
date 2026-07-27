@@ -97,9 +97,19 @@ def _tennis_rows():
     cross-source join DIP's /decision needs to price an edge:
       source contest-edge : our Glicko-2 fair value   (rated matches only)
       source polymarket   : the venue's price for the same question
-    Unrated matches get only the venue row — no fabricated model claim."""
+    Unrated matches get only the venue row — no fabricated model claim.
+
+    ALSO emits a distinct 'match_moneyline_edge' market: only the matches where
+    the model DISAGREES with the venue by >= MIN_EDGE, entity = the side we would
+    actually bet, priced at that side's REAL quote (never 1-p). This is the lane's
+    strategy, not "back the favourite every match" — so DIP's market_light gates
+    it on the EDGE bets' own graded history (green only when the pessimistic
+    Wilson bound clears the fee-aware breakeven = the edge proven, not lucky).
+    DIP settles it from Polymarket by event+entity like any other market; no DIP
+    code change, no re-grading here."""
     try:
         from src.contest import tennis
+        from app.jobs.tennis_depth import edge_side
         matches = tennis.fetch_matches()
         tennis.attach_model(matches)
     except Exception:
@@ -117,6 +127,14 @@ def _tennis_rows():
             model_p = m.model_p1 if fav_name == m.sides[0][0] else 1 - m.model_p1
             yield {**base, "modelp": round(model_p, 3),
                    "version": "glicko2_v1", "source": "contest-edge"}
+            es = edge_side(m.model_p1, m.sides[0][1], m.sides[1][1])
+            if es:
+                idx, price, _fair = es
+                yield {"entity": m.sides[idx][0], "gameid": m.slug or m.title,
+                       "market": "match_moneyline_edge", "date": today,
+                       "line": 0.5, "domain": "tennis", "actual": "",
+                       "modelp": round(price, 3), "version": "glicko2_edge_v1",
+                       "source": "contest-edge", "side": "over"}
 
 
 def _lane_pair_rows():
