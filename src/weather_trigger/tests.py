@@ -196,12 +196,18 @@ def test_flat_pnl():
 def test_tennis_edge_side():
     from app.jobs.tennis_depth import edge_side
     # model likes side0 (0.55 > 0.44 price) -> bet side0 at 0.44, fair 0.55
-    assert edge_side(0.55, 0.44) == (0, 0.44, 0.55)
-    # model likes side1 (model_p1 0.40 < 0.50 price) -> bet side1 at 0.50, fair 0.60
-    assert edge_side(0.40, 0.50) == (1, 0.50, 0.60)
+    assert edge_side(0.55, 0.44, 0.54) == (0, 0.44, 0.55)
+    # model likes side1: uses the REAL side1 quote, not 1-price_p1.
+    # prices 0.50/0.54 sum to 1.04 (vig). Side1 edge = (1-0.40)-0.54 = 0.06 -> bet
+    # side1 at its real 0.54, fair 0.60 (NOT the old 1-0.50=0.50 derivation).
+    assert edge_side(0.40, 0.50, 0.54) == (1, 0.54, 0.60)
+    # the vig can erase an edge the old 1-p derivation would have faked:
+    # side1 real edge = (1-0.44)-0.55 = 0.01 < 3c -> no bet. The old code judged
+    # side1 off (1-price_p1)=0.53 giving a 3c "edge" and WOULD have bet here.
+    assert edge_side(0.44, 0.47, 0.55) is None
     # edge under 3c -> no bet; unrated -> no bet
-    assert edge_side(0.51, 0.50) is None
-    assert edge_side(None, 0.50) is None
+    assert edge_side(0.51, 0.50, 0.52) is None
+    assert edge_side(None, 0.50, 0.52) is None
     # Near-conceded high price -> flagged, downside ratio large
     hi = quality.classify("PROVEN", 0.97, icao="KDAL")
     assert hi["near_conceded"] and hi["tier"] == "CAUTION"

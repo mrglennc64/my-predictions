@@ -26,6 +26,21 @@ class Match:
     model_p1: float | None = None     # Glicko-2 P(sides[0] wins); None unrated
     tokens: tuple = ()                # (token_p1, token_p2) CLOB ids — depth capture
     condition_id: str = ""            # for the trades API
+    event_start: str = ""             # match start (ISO Z); freeze must precede it
+
+
+def _event_start(ev: dict, mk: dict) -> str:
+    """Match start time as ISO-8601 Z. Prefer the event startTime; fall back to
+    the market gameStartTime ('YYYY-MM-DD HH:MM:SS+00'). NOT startDate — that is
+    market-creation time, which is earlier than the match and would defeat the
+    freeze-before-start check."""
+    s = ev.get("startTime")
+    if s:
+        return s
+    g = mk.get("gameStartTime")
+    if g:
+        return g.replace(" ", "T").replace("+00", "Z")
+    return ""
 
 
 def key_from_full_name(name: str) -> str:
@@ -109,7 +124,8 @@ def fetch_matches(max_events: int = 200) -> list[Match]:
                 sides=[(str(outcomes[0]), p0), (str(outcomes[1]), p1)],
                 slug=ev.get("slug", ""),
                 tokens=tuple(str(t) for t in toks[:2]),
-                condition_id=mk.get("conditionId") or ""))
+                condition_id=mk.get("conditionId") or "",
+                event_start=_event_start(ev, mk)))
             break
     matches.sort(key=lambda m: -m.volume)
     return matches

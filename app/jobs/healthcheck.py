@@ -39,6 +39,26 @@ def main():
         if leaked:
             failures.append(f"LEAK: {leaked} predictions frozen at/after start_time")
 
+        # 2b. same leak-proof invariant for the tennis lane. Only rows that carry
+        # an event_start can be checked; a genuine frozen>=start is a hard leak,
+        # while rows lacking event_start (pre-migration) are surfaced as a warning
+        # rather than silently passing.
+        tp = db.tennis_predictions
+        tennis_leaked = conn.execute(
+            select(func.count()).select_from(tp).where(
+                tp.c.event_start.isnot(None),
+                tp.c.event_start != "",
+                tp.c.frozen_at >= tp.c.event_start)).scalar()
+        if tennis_leaked:
+            failures.append(
+                f"LEAK: {tennis_leaked} tennis predictions frozen at/after event_start")
+        tennis_blind = conn.execute(
+            select(func.count()).select_from(tp).where(
+                (tp.c.event_start.is_(None)) | (tp.c.event_start == ""))).scalar()
+        if tennis_blind:
+            print(f"[healthcheck] WARN: {tennis_blind} tennis predictions have no "
+                  f"event_start — freeze-before-start unverifiable for those rows")
+
         # 3. odds snapshots exist for today's slate (warn only — key may be absent)
         todays_games = conn.execute(
             select(func.count()).select_from(db.games)

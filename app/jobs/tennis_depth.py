@@ -20,17 +20,22 @@ from src.weather_trigger import clob
 MIN_EDGE = 0.03    # only where the model disagrees with the venue by >= 3c
 
 
-def edge_side(model_p1, price_p1):
-    """(index, price_paid, model_fair) of the side the model would bet, or None.
-    Bet side 0 if model likes it (model_p1 > price_p1), else side 1."""
+def edge_side(model_p1, price_p1, price_p2):
+    """(index, price, model_fair) of the side the model would bet, or None.
+
+    Edge is measured on each side against its OWN real quote. The two Polymarket
+    outcome prices do NOT sum to 1 (there's vig/spread), so deriving side 1 as
+    1 - price_p1 overstated the underdog edge — use the real price_p2 instead.
+    Pick the side whose real edge is larger and clears MIN_EDGE."""
     if model_p1 is None:
         return None
-    edge = model_p1 - price_p1
-    if abs(edge) < MIN_EDGE:
-        return None
-    if edge > 0:
+    e0 = model_p1 - price_p1                 # model's edge on side 0
+    e1 = (1 - model_p1) - price_p2           # model's edge on side 1, real quote
+    if e0 >= e1 and e0 >= MIN_EDGE:
         return (0, price_p1, model_p1)
-    return (1, round(1 - price_p1, 3), round(1 - model_p1, 3))
+    if e1 > e0 and e1 >= MIN_EDGE:
+        return (1, price_p2, round(1 - model_p1, 3))
+    return None
 
 
 def _now():
@@ -48,7 +53,7 @@ def main():
 
     rows = []
     for m in matches:
-        es = edge_side(m.model_p1, m.sides[0][1])
+        es = edge_side(m.model_p1, m.sides[0][1], m.sides[1][1])
         if not es or len(m.tokens) < 2:
             continue
         idx, price, fair = es
@@ -58,11 +63,16 @@ def main():
             _, best_ask = clob.best_bid_ask(book)
         except Exception:
             continue
+        # edge_cents must be measured against the ask you'd actually PAY, not the
+        # displayed price — otherwise it's the same displayed-vs-real inflation
+        # that killed weather. Fall back to the quote only if the book is empty.
+        fill_price = best_ask if best_ask is not None else price
         notional = round(sum(l["price"] * l["size"] for l in walked), 2)
         rows.append(dict(
             slug=m.slug, title=m.title[:80], edge_player=m.sides[idx][0],
-            price_paid=round(best_ask, 3) if best_ask else round(price, 3),
-            model_fair=round(fair, 3), edge_cents=round((fair - price) * 100, 1),
+            price_paid=round(fill_price, 3),
+            model_fair=round(fair, 3),
+            edge_cents=round((fair - fill_price) * 100, 1),
             ev_edge_dollars=ev_edge, fillable_notional=notional,
             n_levels=len(walked), best_ask=best_ask, captured_at=_now()))
 
@@ -85,7 +95,7 @@ def latest_summary():
     med = s[len(s) // 2]
     real = sum(1 for v in vals if v >= 100)
     verdict = (f"tennis edge-side depth: {len(vals)} snapshots, median "
-               f"${med:.0f} fillable at +EV prices, {real} with ≥$100. "
+               f"${med:.0f} fillable at +EV prices, {real} with >=$100. "
                + ("REAL depth — unlike weather, the +EV is capturable." if med >= 50
                   else "thin — the +EV may be as unfillable as weather was."))
     return {"n": len(vals), "median_fillable": round(med, 2),

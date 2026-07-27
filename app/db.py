@@ -120,6 +120,9 @@ tennis_predictions = Table(                            # APPEND-ONLY like the re
     Column("model_p1", Float),                         # NULL if a player unrated
     Column("market_p1", Float, nullable=False),
     Column("frozen_at", Text, nullable=False),
+    Column("event_start", Text),                       # match start (ISO Z);
+    #                                                    healthcheck: frozen < this
+
     Column("outcome", Integer),                        # 1 = p1 won; NULL pending
     Column("model_brier", Float),
     Column("market_brier", Float),
@@ -285,3 +288,9 @@ def _migrate(engine):
             for name, ddl in missing:
                 conn.execute(text(
                     f"ALTER TABLE crypto_signals ADD COLUMN {name} {ddl}"))
+
+    tp_cols = {c["name"] for c in inspect(engine).get_columns("tennis_predictions")}
+    if "event_start" not in tp_cols:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE tennis_predictions ADD COLUMN event_start TEXT"))

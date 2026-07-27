@@ -48,10 +48,17 @@ def main():
     matches = tennis.fetch_matches()
     modeled = tennis.attach_model(matches)
 
-    frozen = graded = 0
+    now = _now()
+    frozen = graded = started = 0
     with engine.begin() as conn:
         for m in matches:
             if not m.slug:
+                continue
+            # Freeze-before-start invariant: Polymarket keeps a match open while
+            # it is being played, so fetch_matches returns in-progress matches.
+            # Never freeze one that has already started — that is the leak.
+            if m.event_start and m.event_start <= now:
+                started += 1
                 continue
             exists = conn.execute(
                 select(db.tennis_predictions.c.pred_id)
@@ -62,7 +69,7 @@ def main():
                 slug=m.slug, title=m.title,
                 p1=m.sides[0][0], p2=m.sides[1][0],
                 model_p1=m.model_p1, market_p1=m.sides[0][1],
-                frozen_at=_now()))
+                frozen_at=_now(), event_start=m.event_start or None))
             frozen += 1
 
         pending = conn.execute(
@@ -82,7 +89,7 @@ def main():
                 graded_at=_now()))
             graded += 1
     print(f"[tennis_lane] frozen {frozen} (modeled {modeled}/{len(matches)}), "
-          f"graded {graded}")
+          f"graded {graded}, skipped {started} already-started (leak-proof)")
 
 
 if __name__ == "__main__":
