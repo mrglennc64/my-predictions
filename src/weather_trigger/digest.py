@@ -230,8 +230,67 @@ def compute():
         "station_bias": _station_bias(),
         "station_health": _station_health(),
         "depth_reality": _depth_reality(),
+        "flat_pnl": _flat_pnl(),
         "global_verdict": verdict,
     }
+
+
+# Polymarket's standard (non-crypto) markets are fee-free today; kept explicit so
+# a future fee change is visible in the math, not silently absorbed.
+FLAT_FEE = 0.0
+
+
+def flat_pnl_calc(locks, phantom=0.0, fee=0.0):
+    """Pure: would a flat 1-unit bet on each resolved lock's sure side have made
+    money? A win pays (1-price); a loss forfeits `price`. Hit-rate hides this —
+    near-certain locks bought high need a very high hit-rate to clear breakeven.
+    `realistic` also haircuts WINNERS by phantom depth (you can't fill them at
+    size when half the book is illusory) and by the fee; losers stay full.
+
+    locks: [{"price": float in (0,1), "win": bool}]."""
+    n = len(locks)
+    if not n:
+        return None
+    wins = sum(1 for l in locks if l["win"])
+    mean_price = sum(l["price"] for l in locks) / n
+    gross = sum((1 - l["price"]) if l["win"] else -l["price"] for l in locks)
+    realistic = sum(
+        (1 - l["price"]) * (1 - phantom) * (1 - fee) if l["win"] else -l["price"]
+        for l in locks)
+    verdict = (
+        f"would-it-have-made-money: flat 1u on {n} priced locks — {wins/n:.0%} hit "
+        f"vs {mean_price:.0%} breakeven → gross {gross:+.2f}u, realistic "
+        f"{realistic:+.2f}u after {phantom:.0%} phantom-depth"
+        + (f" + {fee:.0%} fee" if fee else "")
+        + ". " + ("net PROFIT." if realistic > 0
+                  else "net LOSS — accuracy is not edge."))
+    return {"n": n, "wins": wins, "hit_rate": round(wins / n, 3),
+            "breakeven": round(mean_price, 3), "gross_u": round(gross, 2),
+            "realistic_u": round(realistic, 2), "phantom": phantom, "fee": fee,
+            "verdict": verdict}
+
+
+def _flat_pnl():
+    tg, te = db.trigger_grades, db.trigger_events
+    with db.get_engine().connect() as conn:
+        graded = conn.execute(select(tg.c.mslug, tg.c.lock_correct)).fetchall()
+        price = {}
+        for r in conn.execute(select(te.c.mslug, te.c.best_ask)
+                              .where(te.c.kind == "LOCK",
+                                     te.c.best_ask.isnot(None))
+                              .order_by(te.c.id)):
+            price.setdefault(r.mslug, r.best_ask)
+    locks = [{"price": price[g.mslug], "win": bool(g.lock_correct)}
+             for g in graded
+             if price.get(g.mslug) and 0 < price[g.mslug] < 1]
+    phantom = 0.0
+    try:
+        from app.jobs import depth_reality
+        s = depth_reality.latest_summary()
+        phantom = s["mean_phantom_ratio"] if s else 0.0
+    except Exception:
+        phantom = 0.0
+    return flat_pnl_calc(locks, phantom=phantom, fee=FLAT_FEE)
 
 
 def _depth_reality():

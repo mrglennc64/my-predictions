@@ -175,6 +175,22 @@ def test_phantom_ratio():
     assert phantom_ratio(100, 250) == 0.0
     # no displayed depth -> nothing to judge
     assert phantom_ratio(0, 0) is None
+
+
+def test_flat_pnl():
+    from src.weather_trigger.digest import flat_pnl_calc
+    # 4 wins + 1 loss, all bought at 0.90: 80% hit but breakeven is 90% -> LOSS.
+    # gross = 4*(0.10) - 0.90 = -0.50u. Hit-rate hides this.
+    locks = [{"price": 0.90, "win": True}] * 4 + [{"price": 0.90, "win": False}]
+    r = flat_pnl_calc(locks)
+    assert r["hit_rate"] == 0.8 and r["breakeven"] == 0.9
+    assert r["gross_u"] == -0.5 and r["realistic_u"] < 0
+    # phantom haircut only makes a losing book worse, never flips it positive
+    rp = flat_pnl_calc(locks, phantom=0.52)
+    assert rp["realistic_u"] < r["gross_u"]
+    # a genuinely cheap winning book DOES profit (edge, not just accuracy)
+    good = [{"price": 0.40, "win": True}] * 7 + [{"price": 0.40, "win": False}] * 3
+    assert flat_pnl_calc(good)["gross_u"] > 0
     # Near-conceded high price -> flagged, downside ratio large
     hi = quality.classify("PROVEN", 0.97, icao="KDAL")
     assert hi["near_conceded"] and hi["tier"] == "CAUTION"

@@ -394,6 +394,20 @@ def triggers_page():
     banner = (f"<p class='gate {'open' if gate else 'closed'}'>"
               f"{'✓ GATE OPEN' if gate else '⛔ GATE CLOSED — paper only'} · "
               f"{d.get('resolution_verdict', '')}</p>")
+    pnl = d.get("flat_pnl")
+    if pnl:
+        made = pnl["realistic_u"] > 0
+        pnl_banner = (
+            f"<p class='gate {'open' if made else 'closed'}'>"
+            f"{'💰' if made else '📉'} {pnl['verdict']}</p>"
+            "<p class='note'>The trading answer, price-aware: a win pays "
+            "(1−price), a loss forfeits the price. Hit-rate is not profit — these "
+            "locks are bought near-certain (high price), so an 80% hit on a 0.74 "
+            "average still loses if breakeven is 74%. <b>Realistic</b> also haircuts "
+            "the winners by the measured phantom-depth rate (you can't fill them at "
+            "size). Flat 1-unit stakes; before spread.</p>")
+    else:
+        pnl_banner = ""
     sb = d.get("station_bias", {"stations": [], "n_events": 0})
     if sb["stations"]:
         brows = "\n".join(
@@ -446,6 +460,7 @@ mechanical lock — the market beat the instrument, so there was no edge window
 <b>Real $200</b> = profit-if-correct after walking a real $200 order into the
 book (what survives slippage), vs the whole-book notional.</p>
 {banner}
+{pnl_banner}
 <p class="head">{d['global_verdict']}</p>
 <table><tr><th>City</th><th>Locks</th><th>At risk</th><th>Mkt led</th><th>Median lag</th>
 <th>Resolved</th><th>Median $ fillable</th><th>Real $200</th></tr>
