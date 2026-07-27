@@ -245,6 +245,23 @@ depth_reality = Table(                                  # APPEND-ONLY, one per l
 )
 
 
+tennis_depth = Table(                                   # APPEND-ONLY snapshots —
+    "tennis_depth", metadata,                          # is the +EV tennis edge
+    Column("id", Integer, primary_key=True, autoincrement=True),  # actually
+    Column("slug", Text, nullable=False),              # FILLABLE? (the question
+    Column("title", Text),                             # that killed weather)
+    Column("edge_player", Text),                       # the model-edge side we'd buy
+    Column("price_paid", Float),                       # best ask on that side
+    Column("model_fair", Float),                       # model prob of that side
+    Column("edge_cents", Float),                       # (fair - price) * 100
+    Column("ev_edge_dollars", Float),                  # sum (fair-ask)*size below fair
+    Column("fillable_notional", Float),                # $ deployable at +EV prices
+    Column("n_levels", Integer),
+    Column("best_ask", Float),
+    Column("captured_at", Text, nullable=False),
+)
+
+
 def get_engine():
     return create_engine(DB_URL)
 

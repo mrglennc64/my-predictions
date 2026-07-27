@@ -191,6 +191,17 @@ def test_flat_pnl():
     # a genuinely cheap winning book DOES profit (edge, not just accuracy)
     good = [{"price": 0.40, "win": True}] * 7 + [{"price": 0.40, "win": False}] * 3
     assert flat_pnl_calc(good)["gross_u"] > 0
+
+
+def test_tennis_edge_side():
+    from app.jobs.tennis_depth import edge_side
+    # model likes side0 (0.55 > 0.44 price) -> bet side0 at 0.44, fair 0.55
+    assert edge_side(0.55, 0.44) == (0, 0.44, 0.55)
+    # model likes side1 (model_p1 0.40 < 0.50 price) -> bet side1 at 0.50, fair 0.60
+    assert edge_side(0.40, 0.50) == (1, 0.50, 0.60)
+    # edge under 3c -> no bet; unrated -> no bet
+    assert edge_side(0.51, 0.50) is None
+    assert edge_side(None, 0.50) is None
     # Near-conceded high price -> flagged, downside ratio large
     hi = quality.classify("PROVEN", 0.97, icao="KDAL")
     assert hi["near_conceded"] and hi["tier"] == "CAUTION"

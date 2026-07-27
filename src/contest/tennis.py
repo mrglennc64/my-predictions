@@ -24,6 +24,8 @@ class Match:
     sides: list[tuple[str, float]]    # [(player, price)] both sides
     slug: str = ""
     model_p1: float | None = None     # Glicko-2 P(sides[0] wins); None unrated
+    tokens: tuple = ()                # (token_p1, token_p2) CLOB ids — depth capture
+    condition_id: str = ""            # for the trades API
 
 
 def key_from_full_name(name: str) -> str:
@@ -101,10 +103,13 @@ def fetch_matches(max_events: int = 200) -> list[Match]:
             p0, p1 = float(prices[0]), float(prices[1])
             if not (0.02 < p0 < 0.98):
                 continue
+            toks = gamma.parse_json_field(mk.get("clobTokenIds")) or []
             matches.append(Match(
                 title=title, volume=vol,
                 sides=[(str(outcomes[0]), p0), (str(outcomes[1]), p1)],
-                slug=ev.get("slug", "")))
+                slug=ev.get("slug", ""),
+                tokens=tuple(str(t) for t in toks[:2]),
+                condition_id=mk.get("conditionId") or ""))
             break
     matches.sort(key=lambda m: -m.volume)
     return matches
