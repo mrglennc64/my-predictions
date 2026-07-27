@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from app.jobs import (depth_reality, export_dip, grade, grade_triggers,
                       healthcheck, ingest_polymarket, ingest_schedule, lanes_run,
                       monitor_stations, predict_and_freeze, reconcile_triggers,
-                      tennis_depth, tennis_lane)
+                      tennis_backtest, tennis_depth, tennis_lane)
 
 STEPS = [("ingest_schedule", ingest_schedule.main),
          ("ingest_polymarket", ingest_polymarket.main),
@@ -22,6 +22,7 @@ STEPS = [("ingest_schedule", ingest_schedule.main),
          ("depth_reality", depth_reality.main),
          ("tennis_lane", tennis_lane.main),
          ("tennis_depth", tennis_depth.main),
+         ("tennis_backtest", tennis_backtest.main),
          ("lanes_run", lanes_run.main),
          ("export_dip", export_dip.main),
          ("healthcheck", healthcheck.main)]

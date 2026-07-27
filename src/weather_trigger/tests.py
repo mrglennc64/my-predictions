@@ -208,6 +208,26 @@ def test_tennis_edge_side():
     # edge under 3c -> no bet; unrated -> no bet
     assert edge_side(0.51, 0.50, 0.52) is None
     assert edge_side(None, 0.50, 0.52) is None
+
+
+def test_tennis_bet_roi():
+    from app.jobs.tennis_backtest import bet_roi, summarize
+    # buy at 0.50: win pays (1-.5)/.5 = +1.0; loss = -1.0
+    assert bet_roi(0.50, True) == 1.0
+    assert bet_roi(0.50, False) == -1.0
+    # cheaper price -> bigger payoff on a win
+    assert bet_roi(0.25, True) == 3.0
+    assert abs(bet_roi(0.80, True) - 0.25) < 1e-9
+    # degenerate prices are unpriceable, not a crash
+    assert bet_roi(0.0, True) is None and bet_roi(1.0, False) is None
+    # a symmetric win/loss set at 0.50 -> mean 0, CI spans 0 -> INCONCLUSIVE
+    out = summarize([1.0, -1.0, 1.0, -1.0], wins=2, unpriced=0, full_quote=4)
+    assert "INCONCLUSIVE" in out
+    # an all-wins set -> CI entirely > 0 -> CONFIRMED
+    assert "CONFIRMED" in summarize([1.0, 1.0, 1.0, 1.0], 4, 0, 4)
+
+
+def test_lock_quality_near_conceded():
     # Near-conceded high price -> flagged, downside ratio large
     hi = quality.classify("PROVEN", 0.97, icao="KDAL")
     assert hi["near_conceded"] and hi["tier"] == "CAUTION"

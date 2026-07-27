@@ -69,6 +69,7 @@ def main():
                 slug=m.slug, title=m.title,
                 p1=m.sides[0][0], p2=m.sides[1][0],
                 model_p1=m.model_p1, market_p1=m.sides[0][1],
+                market_p2=m.sides[1][1],
                 frozen_at=_now(), event_start=m.event_start or None))
             frozen += 1
 
