@@ -576,9 +576,13 @@ def home():
  td{{border-bottom:1px solid #d8e0da;padding:.4rem .6rem .4rem 0}}
  .m{{color:#5c6b63}} .note{{color:#5c6b63;font-size:.8rem;margin-top:2rem}}
 </style></head><body>
-<h1>Contest Edge — MLB Ledger</h1>
+<h1>Contest Edge — Ledger</h1>
 <p class="m" style="margin-top:-.2rem">predictions layer ·
 <a href="https://dip.usesmpt.com">decision layer (DIP) →</a></p>
+<p class="m" style="margin:.3rem 0 1rem">Lanes:
+<a href="/">MLB</a> &nbsp;·&nbsp; <a href="/tennis">Tennis</a> &nbsp;·&nbsp;
+<a href="/lanes">All lanes (soccer · weather · WNBA · tennis)</a> &nbsp;·&nbsp;
+<a href="/triggers">Weather triggers</a></p>
 <p class="head">Model Brier: {fmt(metrics['model_brier'], 5) if metrics['model_brier'] else '—'}
  &nbsp;·&nbsp; Market Brier: {fmt(metrics['market_brier'], 5) if metrics['market_brier'] else '—'}
  &nbsp;·&nbsp; {metrics['graded_predictions']} graded predictions</p>
