@@ -498,6 +498,7 @@ def home():
     today = _today_rows()
     graded = _ledger_rows(days=14)
     cr = _crypto()
+    lanes = _lane_stats()
 
     def fmt(v, digits=3):
         return f"{v:.{digits}f}" if isinstance(v, float) else "—"
@@ -559,6 +560,23 @@ def home():
                             (cr["pending"] + cr["recent_graded"])[:20]) or \
         "<tr><td colspan='8'>run: python scan.py crypto-watch 120</td></tr>"
 
+    def lane_link(name):
+        return {"tennis": "/tennis", "weather": "/triggers"}.get(name, "/lanes")
+
+    def lane_edge(l):
+        mb, kb = l["model_brier"], l["market_brier"]
+        if mb is None or kb is None:
+            return "—"
+        return "model" if mb < kb else "market" if kb < mb else "tie"
+
+    lane_rows = "\n".join(
+        f"<tr><td><a href='{lane_link(l['lane'])}'>{l['lane']}</a></td>"
+        f"<td>{l['frozen']}</td><td>{l['graded']}</td>"
+        f"<td>{fmt(l['model_brier'], 4) if l['model_brier'] is not None else '—'}</td>"
+        f"<td>{fmt(l['market_brier'], 4) if l['market_brier'] is not None else '—'}</td>"
+        f"<td>{lane_edge(l)}</td></tr>"
+        for l in lanes) or "<tr><td colspan='6'>no lane data yet</td></tr>"
+
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>Contest Edge — Ledger</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -600,6 +618,15 @@ Probabilities, never picks. Market benchmark: Polymarket.</p>
 <p class="note">Paper trades fire only when |model − market| ≥ 0.10 AND the
 model's edge still clears 0.10 against the actual order-book ask — the price
 a real buy would pay. $100 hypothetical stake each. Zero real orders.</p>
+<h2>Other lanes — at a glance</h2>
+<p class="head">calibration scorecard — lower Brier is better; "closer" is who the
+market agrees with less often. Full detail on each lane's page.</p>
+<table><tr><th>Lane</th><th>Frozen</th><th>Graded</th><th>Model Brier</th>
+<th>Market Brier</th><th>Closer</th></tr>
+{lane_rows}</table>
+<p class="note">These lanes freeze and grade in the same append-only ledger as
+MLB. Tennis is the only one being trialled as a trading lane — its edge is still
+unproven (see <a href="/tennis">/tennis</a>); the rest are calibration only.</p>
 <h2>Graded ledger (recent)</h2>
 <table><tr><th>Start (UTC)</th><th>Game</th><th>Score</th><th>Model P(home)</th>
 <th>Winner</th><th>Brier</th><th>Market Brier</th></tr>
