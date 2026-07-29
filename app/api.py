@@ -317,6 +317,31 @@ def _lane_stats():
     return out
 
 
+def _dip_lights():
+    """Best-effort fetch of DIP's per-market trust lights (source/market -> light).
+    DIP is a separate system and may be down; a failure yields {} so the board
+    still renders — the light column just shows '—'. Accept: application/json so
+    DIP's browser-redirect leaves this request alone."""
+    import os
+    try:
+        import requests
+        url = os.environ.get("DIP_URL", "http://127.0.0.1:8100")
+        d = requests.get(f"{url}/decision",
+                         headers={"Accept": "application/json"}, timeout=2).json()
+        return {k: v.get("light")
+                for k, v in (d.get("layer1", {}).get("markets") or {}).items()}
+    except Exception:
+        return {}
+
+
+# Which DIP market each lane's trust light comes from. Tennis and weather point
+# at the TRADING trial (the edge / the lock), not the raw calibration market;
+# lanes with no DIP market (soccer, ufc — mirror lanes not pushed) show '—'.
+_LANE_DIP_MARKET = {"tennis": "contest-edge/match_moneyline_edge",
+                    "weather": "contest-edge/temp_lock",
+                    "wnba": "contest-edge/team_moneyline"}
+
+
 @app.get("/api/lanes")
 def api_lanes():
     return _lane_stats()
@@ -499,6 +524,7 @@ def home():
     graded = _ledger_rows(days=14)
     cr = _crypto()
     lanes = _lane_stats()
+    dip = _dip_lights()
 
     def fmt(v, digits=3):
         return f"{v:.{digits}f}" if isinstance(v, float) else "—"
@@ -569,13 +595,23 @@ def home():
             return "—"
         return "model" if mb < kb else "market" if kb < mb else "tie"
 
+    dot_color = {"green": "#1a7f37", "amber": "#b45309", "red": "#b91c1c"}
+
+    def lane_dip(name):
+        mkt = _LANE_DIP_MARKET.get(name)
+        light = dip.get(mkt) if mkt else None
+        if not light:
+            return "<span class='m'>—</span>"
+        return (f"<span style='color:{dot_color.get(light, '#5c6b63')}'>●</span> "
+                f"{light}")
+
     lane_rows = "\n".join(
         f"<tr><td><a href='{lane_link(l['lane'])}'>{l['lane']}</a></td>"
         f"<td>{l['frozen']}</td><td>{l['graded']}</td>"
         f"<td>{fmt(l['model_brier'], 4) if l['model_brier'] is not None else '—'}</td>"
         f"<td>{fmt(l['market_brier'], 4) if l['market_brier'] is not None else '—'}</td>"
-        f"<td>{lane_edge(l)}</td></tr>"
-        for l in lanes) or "<tr><td colspan='6'>no lane data yet</td></tr>"
+        f"<td>{lane_edge(l)}</td><td>{lane_dip(l['lane'])}</td></tr>"
+        for l in lanes) or "<tr><td colspan='7'>no lane data yet</td></tr>"
 
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>Contest Edge — Ledger</title>
@@ -622,11 +658,14 @@ a real buy would pay. $100 hypothetical stake each. Zero real orders.</p>
 <p class="head">calibration scorecard — lower Brier is better; "closer" is who the
 market agrees with less often. Full detail on each lane's page.</p>
 <table><tr><th>Lane</th><th>Frozen</th><th>Graded</th><th>Model Brier</th>
-<th>Market Brier</th><th>Closer</th></tr>
+<th>Market Brier</th><th>Closer</th><th>DIP light</th></tr>
 {lane_rows}</table>
 <p class="note">These lanes freeze and grade in the same append-only ledger as
-MLB. Tennis is the only one being trialled as a trading lane — its edge is still
-unproven (see <a href="/tennis">/tennis</a>); the rest are calibration only.</p>
+MLB. The DIP light is the independent referee's verdict — green only when a
+lane's edge clears breakeven at the pessimistic bound; everything is red until
+proven ("—" = no DIP market for that lane). Tennis is the only lane trialled for
+trading and its edge is still unproven (see <a href="/tennis">/tennis</a>); the
+rest are calibration only.</p>
 <h2>Graded ledger (recent)</h2>
 <table><tr><th>Start (UTC)</th><th>Game</th><th>Score</th><th>Model P(home)</th>
 <th>Winner</th><th>Brier</th><th>Market Brier</th></tr>
