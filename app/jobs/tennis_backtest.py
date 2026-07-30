@@ -20,7 +20,10 @@ side-2 bets there are EXCLUDED and counted, never faked.
 
 Read-only. No trading, no gate.
 """
+import json
 import math
+import os
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -50,6 +53,14 @@ def _edge_from_row(model_p1, market_p1, market_p2):
     return None
 
 
+STAKE = 100.0     # hypothetical $ per bet, for the P&L line
+FEE = 0.07        # Polymarket taker fee on winnings
+
+# Where the pipeline drops the machine-readable edge status the homepage reads.
+_STATUS_PATH = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))), "exports", "tennis_edge_status.json")
+
+
 def main():
     engine = db.init_db()
     tp = db.tennis_predictions
@@ -59,6 +70,7 @@ def main():
         ).where(tp.c.outcome.isnot(None), tp.c.model_p1.isnot(None))).fetchall()
 
     rois, wins, unpriced, full_quote = [], 0, 0, 0
+    pnl_gross = pnl_fee = 0.0
     for r in rows:
         es = _edge_from_row(r.model_p1, r.market_p1, r.market_p2)
         if es == "unpriced":
@@ -74,8 +86,53 @@ def main():
         rois.append(roi)
         wins += int(won)
         full_quote += int(r.market_p2 is not None)
+        pnl_gross += STAKE * roi
+        pnl_fee += STAKE * (1 - price) / price * (1 - FEE) if won else -STAKE
 
     print(summarize(rois, wins, unpriced, full_quote))
+    _write_status(rois, wins, unpriced, pnl_gross, pnl_fee)
+
+
+def _write_status(rois, wins, unpriced, pnl_gross, pnl_fee):
+    """Persist a machine-readable edge status the homepage banner reads. Records
+    the FIRST date the CI cleared 0 so the milestone is dated even if a later run
+    dips back under (proven reflects the CURRENT interval, first_proven_at sticks)."""
+    n = len(rois)
+    if n < 2:
+        return
+    mean = sum(rois) / n
+    std = math.sqrt(sum((x - mean) ** 2 for x in rois) / (n - 1))
+    lo = mean - 1.96 * std / math.sqrt(n)
+    hi = mean + 1.96 * std / math.sqrt(n)
+    proven = lo > 0
+    need = int((1.96 * std / mean) ** 2) + 1 if mean > 0 else None
+
+    prior = {}
+    try:
+        with open(_STATUS_PATH, encoding="utf-8") as f:
+            prior = json.load(f)
+    except (OSError, ValueError):
+        prior = {}
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    first_proven = prior.get("first_proven_at") or (now if proven else None)
+
+    if proven and not prior.get("proven"):
+        print(f"[tennis_backtest] *** MILESTONE: tennis edge CLEARED 0 at 95% "
+              f"(n={n}, mean {mean:+.2%}, CI low {lo:+.2%}) — edge PROVEN ***")
+
+    status = {
+        "n": n, "correct": wins, "win_rate": round(wins / n, 4),
+        "mean_roi": round(mean, 4), "ci_lo": round(lo, 4), "ci_hi": round(hi, 4),
+        "pnl_gross": round(pnl_gross, 0), "pnl_fee": round(pnl_fee, 0),
+        "unpriced_excluded": unpriced, "bets_needed": need,
+        "proven": proven, "first_proven_at": first_proven, "updated_at": now,
+    }
+    try:
+        os.makedirs(os.path.dirname(_STATUS_PATH), exist_ok=True)
+        with open(_STATUS_PATH, "w", encoding="utf-8") as f:
+            json.dump(status, f)
+    except OSError:
+        pass
 
 
 def summarize(rois, wins, unpriced, full_quote):

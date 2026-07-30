@@ -317,6 +317,20 @@ def _lane_stats():
     return out
 
 
+def _tennis_edge_status():
+    """Read the edge-proof status the pipeline's tennis_backtest writes. Returns
+    the dict or None if absent/unreadable — the banner just hides when missing."""
+    import json
+    import os
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "exports", "tennis_edge_status.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
 def _dip_lights():
     """Best-effort fetch of DIP's per-market trust lights (source/market -> light).
     DIP is a separate system and may be down; a failure yields {} so the board
@@ -525,6 +539,30 @@ def home():
     cr = _crypto()
     lanes = _lane_stats()
     dip = _dip_lights()
+    edge = _tennis_edge_status()
+
+    edge_banner = ""
+    if edge and edge.get("n"):
+        if edge.get("proven"):
+            edge_banner = (
+                f"<p style='background:#e7f6ec;border-left:4px solid #1a7f37;"
+                f"padding:.7rem 1rem;margin:1rem 0;border-radius:4px'>"
+                f"<b style='color:#1a7f37'>● TENNIS EDGE PROVEN</b> — 95% CI cleared "
+                f"0 (first {(edge.get('first_proven_at') or '')[:10]}). "
+                f"{edge['correct']}/{edge['n']} correct, {edge['mean_roi']*100:+.1f}%/bet, "
+                f"CI [{edge['ci_lo']*100:+.1f}%, {edge['ci_hi']*100:+.1f}%], "
+                f"${edge['pnl_fee']:+,.0f} after fees on $100/bet. "
+                f"<a href='/tennis'>details →</a></p>")
+        else:
+            need = edge.get("bets_needed")
+            need_txt = f" · ~{need} bets to prove (have {edge['n']})" if need else ""
+            edge_banner = (
+                f"<p class='m' style='background:#fafbf8;border-left:4px solid #b45309;"
+                f"padding:.5rem 1rem;margin:1rem 0;border-radius:4px'>"
+                f"<b>Tennis edge trial (unproven):</b> {edge['correct']}/{edge['n']} "
+                f"correct, {edge['mean_roi']*100:+.1f}%/bet, 95% CI "
+                f"[{edge['ci_lo']*100:+.1f}%, {edge['ci_hi']*100:+.1f}%] spans 0"
+                f"{need_txt}. ${edge['pnl_fee']:+,.0f} after fees on $100/bet, paper.</p>")
 
     def fmt(v, digits=3):
         return f"{v:.{digits}f}" if isinstance(v, float) else "—"
@@ -637,6 +675,7 @@ def home():
 <a href="/">MLB</a> &nbsp;·&nbsp; <a href="/tennis">Tennis</a> &nbsp;·&nbsp;
 <a href="/lanes">All lanes (soccer · weather · WNBA · tennis)</a> &nbsp;·&nbsp;
 <a href="/triggers">Weather triggers</a></p>
+{edge_banner}
 <p class="head">Model Brier: {fmt(metrics['model_brier'], 5) if metrics['model_brier'] else '—'}
  &nbsp;·&nbsp; Market Brier: {fmt(metrics['market_brier'], 5) if metrics['market_brier'] else '—'}
  &nbsp;·&nbsp; {metrics['graded_predictions']} graded predictions</p>
