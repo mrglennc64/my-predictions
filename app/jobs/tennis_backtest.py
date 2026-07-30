@@ -80,14 +80,20 @@ def main():
             continue
         idx, price, _fair = es
         won = (r.outcome == 1) if idx == 0 else (r.outcome == 0)
-        roi = bet_roi(price, won)
-        if roi is None:
+        gross = bet_roi(price, won)
+        if gross is None:
             continue
-        rois.append(roi)
+        # Gate the CI and the "proven" flag on NET-of-fee returns: a real edge has
+        # to survive Polymarket's 7% taker fee, not just beat 0 gross. A win nets
+        # (1-p)/p*(1-fee); a loss still forfeits the full stake. Proving on gross
+        # would flash green on an edge the fee erases — the exact trap that made
+        # DIP's fee-free favourite light misleading.
+        net = (1 - price) / price * (1 - FEE) if won else -1.0
+        rois.append(net)
         wins += int(won)
         full_quote += int(r.market_p2 is not None)
-        pnl_gross += STAKE * roi
-        pnl_fee += STAKE * (1 - price) / price * (1 - FEE) if won else -STAKE
+        pnl_gross += STAKE * gross
+        pnl_fee += STAKE * net
 
     print(summarize(rois, wins, unpriced, full_quote))
     _write_status(rois, wins, unpriced, pnl_gross, pnl_fee)
@@ -162,7 +168,7 @@ def summarize(rois, wins, unpriced, full_quote):
     return (f"[tennis_backtest] n={n} priceable edge bets "
             f"({full_quote} full-quote, {n - full_quote} side-1-only; "
             f"{unpriced} model-likes-side2 excluded for want of a real price). "
-            f"win rate {win_rate:.1%}, mean ROI {mean:+.2%}/bet, "
+            f"win rate {win_rate:.1%}, mean NET ROI {mean:+.2%}/bet (after 7% fee), "
             f"95% CI [{lo:+.2%}, {hi:+.2%}]. {verdict}")
 
 
