@@ -537,6 +537,55 @@ def api_metrics():
     return _metrics()
 
 
+@app.get("/changelog", response_class=HTMLResponse)
+def changelog():
+    """Recent app changes, straight from git history — stays current on its own."""
+    import os
+    import subprocess
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        out = subprocess.run(
+            ["git", "-C", repo, "log", "--date=short",
+             "--pretty=format:%ad\t%h\t%s", "-40"],
+            capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        out = ""
+
+    def esc(s):
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    rows = ""
+    for line in out.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3:
+            d, h, s = parts
+            rows += (f"<tr><td class='m'>{d}</td><td class='m'>{esc(h)}</td>"
+                     f"<td>{esc(s)}</td></tr>\n")
+    rows = rows or "<tr><td colspan='3'>changelog unavailable</td></tr>"
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<title>Contest Edge — Changelog</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+ body{{font-family:'Segoe UI',system-ui,sans-serif;max-width:60rem;margin:2rem auto;
+      padding:0 1rem;color:#1a2420;background:#fafbf8;line-height:1.5}}
+ h1{{font-size:1.5rem}} table{{border-collapse:collapse;width:100%;font-size:.85rem;
+      font-variant-numeric:tabular-nums}}
+ th{{text-align:left;font-family:Consolas,monospace;font-size:.7rem;
+    text-transform:uppercase;letter-spacing:.07em;color:#5c6b63;
+    border-bottom:2px solid #1a2420;padding:.35rem .6rem .3rem 0}}
+ td{{border-bottom:1px solid #d8e0da;padding:.4rem .6rem;vertical-align:top}}
+ .m{{color:#5c6b63;font-family:Consolas,monospace;font-size:.8rem;white-space:nowrap}}
+ .note{{color:#5c6b63;font-size:.8rem;margin-top:1.5rem}}
+</style></head><body>
+<h1>Contest Edge — Changelog</h1>
+<p class="note">Last 40 changes, live from the repo. <a href="/">&larr; back to ledger</a></p>
+<table><tr><th>Date</th><th>Commit</th><th>Change</th></tr>
+{rows}</table>
+<p class="note">Full history:
+<a href="https://github.com/mrglennc64/my-predictions/commits">GitHub</a>.</p>
+</body></html>"""
+
+
 @app.get("/", response_class=HTMLResponse)
 def home():
     metrics = _metrics()
@@ -675,7 +724,8 @@ def home():
 <p class="m" style="margin:.3rem 0 1rem">Lanes:
 <a href="/">MLB</a> &nbsp;·&nbsp; <a href="/tennis">Tennis</a> &nbsp;·&nbsp;
 <a href="/lanes">All lanes (soccer · weather · WNBA · tennis)</a> &nbsp;·&nbsp;
-<a href="/triggers">Weather triggers</a></p>
+<a href="/triggers">Weather triggers</a> &nbsp;·&nbsp;
+<a href="/changelog">Changelog</a></p>
 {edge_banner}
 <p class="head">Model Brier: {fmt(metrics['model_brier'], 5) if metrics['model_brier'] else '—'}
  &nbsp;·&nbsp; Market Brier: {fmt(metrics['market_brier'], 5) if metrics['market_brier'] else '—'}
