@@ -1,4 +1,12 @@
-"""Does the tennis model-edge actually make money, or is +EV small-sample noise?
+"""VERDICT 2026-08-01: TRIAL CLOSED — no harvestable edge. Kept running for the
+record, NOT as a live trading signal. Three converging tests killed the thesis:
+clean live Polymarket bets went net-negative once pre-fix contaminated rows were
+excluded; a 15k-match backtest vs de-vigged Pinnacle lost in every config
+(-5%/bet, CI below 0); and the model's Brier trails the market on every lane.
+Tennis is now calibration-only like the other lanes. This job still writes its
+status so the negative result stays visible; it no longer implies a trade.
+
+Does the tennis model-edge actually make money, or is +EV small-sample noise?
 
 The decisive question for the tennis lane. Its model is LESS accurate than the
 market (Brier ~0.239 vs ~0.183), so any positive return comes from selective

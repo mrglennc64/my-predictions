@@ -258,13 +258,19 @@ def tennis_page():
  .note{{color:#5c6b63;font-size:.82rem}}
  .head{{font-family:Consolas,monospace;color:#0e7a4c}}
 </style></head><body>
-<h1>Tennis — Glicko-2 model + fair-priced combos</h1>
+<h1>Tennis — Glicko-2 model (calibration-only)</h1>
+<p class="note" style="background:#fafbf8;border-left:4px solid #b91c1c;
+padding:.6rem 1rem;border-radius:4px;color:#1a2420">
+<b>Trading trial CLOSED 2026-08-01 — no harvestable edge.</b> A 15k-match
+sharp-market backtest and the clean live record both came back negative: this
+model does not beat the market. The combos and "model likes" flags below are
+kept for interest and calibration only — <b>not</b> trade signals, and no real
+money is ever placed.</p>
 <p class="head">{sb_line}</p>
-<p class="note">Rule: build the slip on Polymarket, read their quoted payout,
-compare to FAIR below. Quote &ge; fair = good price. Slips use market leg
-prices; the MODEL P column is our Glicko-2 rating engine (trained on 18.8k
-matches, holdout Brier 0.228) — edge flags mark &ge;7-point disagreements
-worth a look, not automatic bets. Refreshes every 2 min.</p>
+<p class="note">The MODEL P column is our Glicko-2 rating engine (trained on 18.8k
+matches, holdout Brier 0.228). "Divergence" flags &ge;7-point model-vs-market
+disagreements — historically these were the model's <i>worst</i> calls, not
+value. Shown for transparency, not action. Refreshes every 2 min.</p>
 <h2>Anchor slips (highest hit chance)</h2>
 <table><tr><th>P(hit)</th><th>Fair payout</th><th>Legs</th></tr>
 {slip_block('anchor')}</table>
@@ -541,28 +547,23 @@ def home():
     dip = _dip_lights()
     edge = _tennis_edge_status()
 
-    edge_banner = ""
+    # Tennis trading trial CLOSED 2026-08-01: three converging tests (clean live
+    # Polymarket bets, a 15k-match Pinnacle backtest, and per-lane Brier) found no
+    # harvestable edge. Tennis is now calibration-only like the other lanes. The
+    # record stays on display rather than being erased — a negative result kept
+    # honest. The backtest still runs for the record; it no longer implies trading.
+    rec = ""
     if edge and edge.get("n"):
-        if edge.get("proven"):
-            edge_banner = (
-                f"<p style='background:#e7f6ec;border-left:4px solid #1a7f37;"
-                f"padding:.7rem 1rem;margin:1rem 0;border-radius:4px'>"
-                f"<b style='color:#1a7f37'>● TENNIS EDGE PROVEN</b> — 95% CI cleared "
-                f"0 (first {(edge.get('first_proven_at') or '')[:10]}). "
-                f"{edge['correct']}/{edge['n']} correct, {edge['mean_roi']*100:+.1f}%/bet, "
-                f"CI [{edge['ci_lo']*100:+.1f}%, {edge['ci_hi']*100:+.1f}%], "
-                f"${edge['pnl_fee']:+,.0f} after fees on $100/bet. "
-                f"<a href='/tennis'>details →</a></p>")
-        else:
-            need = edge.get("bets_needed")
-            need_txt = f" · ~{need} bets to prove (have {edge['n']})" if need else ""
-            edge_banner = (
-                f"<p class='m' style='background:#fafbf8;border-left:4px solid #b45309;"
-                f"padding:.5rem 1rem;margin:1rem 0;border-radius:4px'>"
-                f"<b>Tennis edge trial (unproven):</b> {edge['correct']}/{edge['n']} "
-                f"correct, {edge['mean_roi']*100:+.1f}%/bet, 95% CI "
-                f"[{edge['ci_lo']*100:+.1f}%, {edge['ci_hi']*100:+.1f}%] spans 0"
-                f"{need_txt}. ${edge['pnl_fee']:+,.0f} after fees on $100/bet, paper.</p>")
+        rec = (f" On clean data the edge went {edge['correct']}/{edge['n']} with a "
+               f"net {edge['mean_roi']*100:+.1f}%/bet (95% CI "
+               f"[{edge['ci_lo']*100:+.1f}%, {edge['ci_hi']*100:+.1f}%]).")
+    edge_banner = (
+        f"<p class='m' style='background:#fafbf8;border-left:4px solid #b91c1c;"
+        f"padding:.6rem 1rem;margin:1rem 0;border-radius:4px'>"
+        f"<b>Tennis trading trial: CLOSED (2026-08-01) — no harvestable edge.</b> "
+        f"Three tests (clean live bets, a 15k-match sharp-market backtest, Brier "
+        f"vs market) all came back negative, so tennis is now <b>calibration-only</b>"
+        f" like every other lane.{rec} Always paper; no real money ever placed.</p>")
 
     def fmt(v, digits=3):
         return f"{v:.{digits}f}" if isinstance(v, float) else "—"
@@ -702,9 +703,10 @@ market agrees with less often. Full detail on each lane's page.</p>
 <p class="note">These lanes freeze and grade in the same append-only ledger as
 MLB. The DIP light is the independent referee's verdict — green only when a
 lane's edge clears breakeven at the pessimistic bound; everything is red until
-proven ("—" = no DIP market for that lane). Tennis is the only lane trialled for
-trading and its edge is still unproven (see <a href="/tennis">/tennis</a>); the
-rest are calibration only.</p>
+proven ("—" = no DIP market for that lane). <b>All lanes are calibration-only</b>
+— none beats the market enough to trade. Tennis was trialled for trading and
+<b>closed 2026-08-01</b> after three tests found no harvestable edge (see
+<a href="/tennis">/tennis</a>).</p>
 <h2>Graded ledger (recent)</h2>
 <table><tr><th>Start (UTC)</th><th>Game</th><th>Score</th><th>Model P(home)</th>
 <th>Winner</th><th>Brier</th><th>Market Brier</th></tr>
